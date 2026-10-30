@@ -3,72 +3,9 @@ package com.sam.gogotimeline.core
 /**
  * All fixed values used by the app live here as `const val`.
  *
- * `const val` only supports primitives and strings, so:
- * - dp values are declared as Float and converted with `.dp` at the call site.
- * - colors are declared as Long (ARGB) and wrapped with `Color(...)` at the call site.
+ * `const val` only supports primitives and strings, so dp values are declared as Float and
+ * converted with `.dp` at the call site. Colors live in ui/theme/Color.kt as Compose `Color`.
  */
-
-/** App-level colors. */
-object ColorConst {
-    // Primary (PicCollage teal)
-    const val PRIMARY_LIGHT = 0xFF50C2C4
-    const val ON_PRIMARY_LIGHT = 0xFFFFFFFF
-    const val PRIMARY_DARK = 0xFF3AA9AB
-    const val ON_PRIMARY_DARK = 0xFF000000
-
-    // Backgrounds and surfaces
-    const val BACKGROUND_LIGHT = 0xFFFAFAFA
-    const val BACKGROUND_DARK = 0xFF212121
-    const val SURFACE_LIGHT = 0xFFFFFFFF
-    const val SURFACE_DARK = 0xFF2A2A2A
-
-    // Text
-    const val TEXT_PRIMARY_LIGHT = 0xFF1F1F1F
-    const val TEXT_PRIMARY_DARK = 0xFFECECEC
-    const val TEXT_SECONDARY_LIGHT = 0xFF5F6368
-    const val TEXT_SECONDARY_DARK = 0xFFA0A0A0
-
-    // Selected tab / list item
-    const val SELECTED_CONTAINER_LIGHT = 0xFFD9EDF0
-    const val ON_SELECTED_CONTAINER_LIGHT = 0xFF00696B
-    const val SELECTED_CONTAINER_DARK = 0xFF1F3E40
-    const val ON_SELECTED_CONTAINER_DARK = 0xFF7FD3D5
-
-    // Selected task outline
-    const val SELECTION_OUTLINE_LIGHT = 0xFF000000
-    const val SELECTION_OUTLINE_DARK = 0xFFFFFFFF
-
-    // "Now" line
-    const val NOW_LINE_LIGHT = 0xFF00696B
-    const val NOW_LINE_DARK = 0xFF7FD3D5
-
-    // Grid lines (tentative)
-    const val GRID_MINOR_LIGHT = 0xFFE6E6E6
-    const val GRID_MINOR_DARK = 0xFF333333
-    const val GRID_MAJOR_LIGHT = 0xFFCFCFCF
-    const val GRID_MAJOR_DARK = 0xFF4A4A4A
-}
-
-/** Task colors (tentative). Index order: red, orange, yellow, green, blue, indigo, violet. */
-object TaskColorConst {
-    const val COUNT = 7
-
-    const val RED_LIGHT = 0xFFD32F2F
-    const val ORANGE_LIGHT = 0xFFE65100
-    const val YELLOW_LIGHT = 0xFFB88A00
-    const val GREEN_LIGHT = 0xFF388E3C
-    const val BLUE_LIGHT = 0xFF1E88E5
-    const val INDIGO_LIGHT = 0xFF3F51B5
-    const val VIOLET_LIGHT = 0xFF9C27B0
-
-    const val RED_DARK = 0xFFEF5350
-    const val ORANGE_DARK = 0xFFFF9800
-    const val YELLOW_DARK = 0xFFFDD835
-    const val GREEN_DARK = 0xFF66BB6A
-    const val BLUE_DARK = 0xFF42A5F5
-    const val INDIGO_DARK = 0xFF7986CB
-    const val VIOLET_DARK = 0xFFBA68C8
-}
 
 /** Time axis rules. */
 object TimeConst {
@@ -139,10 +76,22 @@ object LayoutConst {
     const val HEADER_TOP_TIER_HEIGHT_DP = 20f
     const val HEADER_BOTTOM_TIER_HEIGHT_DP = 28f
     const val MIN_TICK_LABEL_SPACING_DP = 40f
+    const val TICK_LABEL_PADDING_DP = 4f
+
+    // Tick data is prepared one viewport width beyond each side (3 widths in total), refilled when less
+    // than half a width remains, and rebuilt after zooming in leaves more than 5 widths (tentative).
+    const val TICK_BUFFER_WIDTHS = 1f
+    const val TICK_REFILL_WIDTHS = 0.5f
+    const val TICK_MAX_PREPARED_WIDTHS = 5f
+
+    // Grid and "now" line
+    const val GRID_LINE_WIDTH_DP = 1f
+    const val NOW_LINE_WIDTH_DP = 2f
+    const val NOW_DOT_RADIUS_DP = 3f
 
     // Left pane
-    const val NAME_COLUMN_PHONE_COLLAPSED_DP = 96f
-    const val NAME_COLUMN_PHONE_EXPANDED_DP = 160f
+    const val NAME_COLUMN_PHONE_COLLAPSED_DP = 64f
+    const val NAME_COLUMN_PHONE_EXPANDED_DP = 80f
     const val NAME_COLUMN_TABLET_COLLAPSED_DP = 160f
     const val NAME_COLUMN_TABLET_EXPANDED_DP = 240f
     const val TIME_COLUMN_WIDTH_DP = 110f

@@ -10,15 +10,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.sam.gogotimeline.core.LayoutConst
-import com.sam.gogotimeline.core.TaskColorConst
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
 
-/** Shows the 7 task colors and the "now" line on the themed background to check contrast. */
+/** Shows the 7 task colors with sample bar text and the "now" line on the themed background to check contrast. */
 @ThemePreviews
 @Composable
 private fun TaskColorSwatchPreview() {
@@ -29,15 +31,22 @@ private fun TaskColorSwatchPreview() {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                repeat(TaskColorConst.COUNT) { index ->
+                repeat(colors.taskColors.size) { index ->
                     Box(
                         modifier = Modifier
-                            .size(width = 40.dp, height = 24.dp)
+                            .size(width = 48.dp, height = 24.dp)
                             .background(
                                 colors.taskColor(index),
                                 RoundedCornerShape(LayoutConst.BAR_CORNER_RADIUS_DP.dp),
                             ),
-                    )
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "09:00",
+                            color = colors.textOnTask,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 }
             }
             Box(

@@ -3,8 +3,6 @@ package com.sam.gogotimeline.ui.theme
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import com.sam.gogotimeline.core.ColorConst
-import com.sam.gogotimeline.core.TaskColorConst
 
 /**
  * Colors that Material's ColorScheme has no slot for.
@@ -13,6 +11,7 @@ import com.sam.gogotimeline.core.TaskColorConst
 @Immutable
 data class ExtendedColors(
     val taskColors: List<Color>,
+    val textOnTask: Color,
     val selectionOutline: Color,
     val nowLine: Color,
     val gridMinor: Color,
@@ -23,35 +22,21 @@ data class ExtendedColors(
 }
 
 internal val LightExtendedColors = ExtendedColors(
-    taskColors = listOf(
-        Color(TaskColorConst.RED_LIGHT),
-        Color(TaskColorConst.ORANGE_LIGHT),
-        Color(TaskColorConst.YELLOW_LIGHT),
-        Color(TaskColorConst.GREEN_LIGHT),
-        Color(TaskColorConst.BLUE_LIGHT),
-        Color(TaskColorConst.INDIGO_LIGHT),
-        Color(TaskColorConst.VIOLET_LIGHT),
-    ),
-    selectionOutline = Color(ColorConst.SELECTION_OUTLINE_LIGHT),
-    nowLine = Color(ColorConst.NOW_LINE_LIGHT),
-    gridMinor = Color(ColorConst.GRID_MINOR_LIGHT),
-    gridMajor = Color(ColorConst.GRID_MAJOR_LIGHT),
+    taskColors = TaskColorsLight,
+    textOnTask = TextOnTaskLight,
+    selectionOutline = SelectionOutlineLight,
+    nowLine = NowLineLight,
+    gridMinor = GridMinorLight,
+    gridMajor = GridMajorLight,
 )
 
 internal val DarkExtendedColors = ExtendedColors(
-    taskColors = listOf(
-        Color(TaskColorConst.RED_DARK),
-        Color(TaskColorConst.ORANGE_DARK),
-        Color(TaskColorConst.YELLOW_DARK),
-        Color(TaskColorConst.GREEN_DARK),
-        Color(TaskColorConst.BLUE_DARK),
-        Color(TaskColorConst.INDIGO_DARK),
-        Color(TaskColorConst.VIOLET_DARK),
-    ),
-    selectionOutline = Color(ColorConst.SELECTION_OUTLINE_DARK),
-    nowLine = Color(ColorConst.NOW_LINE_DARK),
-    gridMinor = Color(ColorConst.GRID_MINOR_DARK),
-    gridMajor = Color(ColorConst.GRID_MAJOR_DARK),
+    taskColors = TaskColorsDark,
+    textOnTask = TextOnTaskDark,
+    selectionOutline = SelectionOutlineDark,
+    nowLine = NowLineDark,
+    gridMinor = GridMinorDark,
+    gridMajor = GridMajorDark,
 )
 
 internal val LocalExtendedColors = staticCompositionLocalOf { LightExtendedColors }

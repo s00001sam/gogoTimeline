@@ -105,7 +105,7 @@ object Ticks {
     }.format(date)
 
     /** First step whose label spacing reaches [minLabelSpacingDp]; the largest step otherwise. */
-    private fun labelStep(
+    fun labelStep(
         unit: TimeUnit,
         dpPerUnit: Float,
         minLabelSpacingDp: Float,

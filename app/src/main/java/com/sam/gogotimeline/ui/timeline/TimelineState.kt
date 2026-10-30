@@ -1,0 +1,157 @@
+package com.sam.gogotimeline.ui.timeline
+
+import androidx.compose.animation.core.AnimationState
+import androidx.compose.animation.core.animateDecay
+import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
+import com.sam.gogotimeline.core.LayoutConst
+import com.sam.gogotimeline.core.gesture.GestureMath
+import com.sam.gogotimeline.core.time.CalendarContext
+import com.sam.gogotimeline.core.time.TimeRange
+import com.sam.gogotimeline.core.time.TimeScale
+import com.sam.gogotimeline.core.time.TimeUnit
+import com.sam.gogotimeline.core.time.Viewport
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+
+/**
+ * What the timeline currently shows. Read only during layout and drawing, so scrolling re-places
+ * and redraws without recomposing. All math is delegated to core/time and core/gesture.
+ */
+@Stable
+class TimelineState(
+    initialCenterTime: Double,
+    initialUnit: TimeUnit,
+    initialDpPerUnit: Float,
+    initialScrollY: Float = 0f,
+    calendar: CalendarContext,
+) {
+    var centerTime by mutableDoubleStateOf(initialCenterTime)
+        private set
+    var unit by mutableStateOf(initialUnit)
+        private set
+    var dpPerUnit by mutableFloatStateOf(initialDpPerUnit)
+        private set
+    var scrollY by mutableFloatStateOf(initialScrollY)
+        private set
+
+    var calendar by mutableStateOf(calendar)
+        internal set
+    var density by mutableFloatStateOf(1f)
+        private set
+    var viewportWidthPx by mutableFloatStateOf(0f)
+        private set
+    var viewportHeightPx by mutableFloatStateOf(0f)
+        private set
+    private var rowCount by mutableIntStateOf(0)
+    private var rowHeightPx by mutableFloatStateOf(0f)
+
+    val viewport: Viewport get() = Viewport(centerTime, unit, dpPerUnit)
+
+    fun scale(): TimeScale = TimeScale(viewport, calendar, density, viewportWidthPx)
+
+    fun timeToX(time: Double): Float = scale().timeToX(time)
+
+    fun xToTime(x: Float): Double = scale().xToTime(x)
+
+    fun visibleTimeRange(): TimeRange = scale().visibleTimeRange()
+
+    fun visibleRowRange(): IntRange = GestureMath.visibleRowRange(
+        scrollY,
+        viewportHeightPx,
+        rowHeightPx,
+        rowCount,
+        LayoutConst.ROW_BUFFER,
+    )
+
+    /** [dx] and [dy] are finger movement in px; content follows the finger. Returns the movement used. */
+    fun scrollBy(
+        dx: Float,
+        dy: Float,
+    ): Offset {
+        val oldCenterTime = centerTime
+        val oldScrollY = scrollY
+        if (dx != 0f) centerTime = scale().panBy(dx).centerTime
+        if (dy != 0f) scrollY = clampScrollY(scrollY - dy)
+        return Offset(if (centerTime != oldCenterTime) dx else 0f, oldScrollY - scrollY)
+    }
+
+    /** Decays [velocity] (px/s) and stops at a limit; cancel the calling coroutine to stop it early. */
+    suspend fun fling(velocity: Velocity) = coroutineScope {
+        if (velocity.x != 0f) launch { decay(velocity.x) { scrollBy(it, 0f).x } }
+        if (velocity.y != 0f) launch { decay(velocity.y) { scrollBy(0f, it).y } }
+    }
+
+    internal fun updateLayout(
+        density: Float,
+        viewportWidthPx: Float,
+        viewportHeightPx: Float,
+        rowCount: Int,
+        rowHeightPx: Float,
+    ) {
+        this.density = density
+        this.viewportWidthPx = viewportWidthPx
+        this.viewportHeightPx = viewportHeightPx
+        this.rowCount = rowCount
+        this.rowHeightPx = rowHeightPx
+        scrollY = clampScrollY(scrollY)
+    }
+
+    private fun clampScrollY(value: Float): Float =
+        GestureMath.clampScrollY(value, rowCount, rowHeightPx, viewportHeightPx)
+
+    private suspend fun decay(
+        velocity: Float,
+        scroll: (Float) -> Float,
+    ) {
+        var last = 0f
+        AnimationState(0f, velocity).animateDecay(exponentialDecay()) {
+            val delta = value - last
+            last = value
+            if (delta != 0f && scroll(delta) == 0f) cancelAnimation()
+        }
+    }
+
+    companion object {
+        /** Keeps center time, unit, width, and vertical scroll across rotation; the unit is saved by name. */
+        fun saver(calendar: CalendarContext): Saver<TimelineState, Any> = listSaver(
+            save = { listOf(it.centerTime, it.unit.name, it.dpPerUnit, it.scrollY) },
+            restore = {
+                TimelineState(
+                    initialCenterTime = it[0] as Double,
+                    initialUnit = TimeUnit.valueOf(it[1] as String),
+                    initialDpPerUnit = it[2] as Float,
+                    initialScrollY = it[3] as Float,
+                    calendar = calendar,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+fun rememberTimelineState(
+    initialCenterTime: Double,
+    initialUnit: TimeUnit,
+    initialDpPerUnit: Float,
+    calendar: CalendarContext,
+): TimelineState = rememberSaveable(saver = TimelineState.saver(calendar)) {
+    TimelineState(
+        initialCenterTime = initialCenterTime,
+        initialUnit = initialUnit,
+        initialDpPerUnit = initialDpPerUnit,
+        calendar = calendar,
+    )
+}

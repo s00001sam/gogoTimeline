@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">gogoTimeline</string>
+    <string name="sample_board_name">Sample board</string>
 </resources>
