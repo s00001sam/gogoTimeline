@@ -76,11 +76,16 @@ object TimeConst {
     const val MIN_YEAR = 1900
     const val MAX_YEAR = 2100
 
+    // Fixed instants inside MIN_YEAR..MAX_YEAR in every zone from UTC-12 to UTC+14, so a time zone change
+    // never moves the limits: 1900-01-01 12:00 UTC and 2100-12-31 10:00 UTC.
+    const val MIN_TIME_MS = -2_208_945_600_000L
+    const val MAX_TIME_MS = 4_133_930_400_000L
+
     // Standard width of one unit at 1x, in dp.
-    const val HOUR_STANDARD_WIDTH_DP = 64f   // 1 hour
-    const val DAY_STANDARD_WIDTH_DP = 64f    // 1 day
-    const val WEEK_STANDARD_WIDTH_DP = 112f  // 1 week
-    const val MONTH_STANDARD_WIDTH_DP = 90f  // 1 month (30 days)
+    const val HOUR_STANDARD_WIDTH_DP = 64f // 1 hour
+    const val DAY_STANDARD_WIDTH_DP = 64f // 1 day
+    const val WEEK_STANDARD_WIDTH_DP = 112f // 1 week
+    const val MONTH_STANDARD_WIDTH_DP = 90f // 1 month (30 days)
     const val MONTH_STANDARD_DAYS = 30
 
     // Standard-width multiplier (settings slider).
@@ -98,6 +103,27 @@ object TimeConst {
     // Smallest time step in the sheet's time picker and minimum task duration in the sheet.
     const val PICKER_MINUTE_STEP = 15
     const val SHEET_MIN_DURATION_MINUTES = 15
+
+    // Zoom limits: Hour standard width x 4, Month standard width x 0.5.
+    const val ZOOM_MAX_HOUR_FACTOR = 4f
+    const val ZOOM_MIN_MONTH_FACTOR = 0.5f
+
+    // Unit switch point = geometric mean of two units' standard scales; zoom in at x factor, out at / factor.
+    const val UNIT_SWITCH_HYSTERESIS = 1.25f
+
+    const val STANDARD_WIDTH_TOLERANCE = 0.001f
+
+    // A new task lasts this many of the current unit.
+    const val NEW_TASK_UNIT_COUNT = 2L
+
+    // Label every Nth bottom tick; the first step that leaves enough spacing wins.
+    @JvmField val HOUR_LABEL_STEPS = intArrayOf(1, 2, 3, 6, 12)
+
+    @JvmField val DAY_LABEL_STEPS = intArrayOf(1, 2, 7, 14)
+
+    @JvmField val WEEK_LABEL_STEPS = intArrayOf(1, 2, 4, 8)
+
+    @JvmField val MONTH_LABEL_STEPS = intArrayOf(1, 2, 3, 6, 12)
 }
 
 /** Layout and interaction values. */
