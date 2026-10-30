@@ -7,10 +7,16 @@ import com.sam.gogotimeline.core.time.NEW_YORK
 import com.sam.gogotimeline.core.time.TAIPEI
 import com.sam.gogotimeline.core.time.TimeLimits
 import com.sam.gogotimeline.core.time.TimeUnit
+import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.core.time.at
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -19,24 +25,34 @@ class TimelineStateTest {
 
     private fun state(
         centerTime: Double = noon,
+        unit: TimeUnit = TimeUnit.HOUR,
+        dpPerUnit: Float = 64f,
         scrollY: Float = 0f,
         rowCount: Int = 10,
         heightPx: Float = HEIGHT_PX,
     ) = TimelineState(
         initialCenterTime = centerTime,
-        initialUnit = TimeUnit.HOUR,
-        initialDpPerUnit = 64f,
+        initialUnit = unit,
+        initialDpPerUnit = dpPerUnit,
         initialScrollY = scrollY,
         calendar = TAIPEI,
-    ).apply { updateLayout(DENSITY, WIDTH_PX, heightPx, rowCount, ROW_PX) }
+    ).apply { updateLayout(DENSITY, AXIS_LEFT_PX, WIDTH_PX, heightPx, rowCount, ROW_PX) }
 
-    /** Advances one 16ms frame per call so decay animations run without real time. */
+    /** Advances one 16ms frame per call so animations finish without real time. */
     private class TestFrameClock : MonotonicFrameClock {
         private var frameTimeNanos = 0L
 
         override suspend fun <R> withFrameNanos(onFrame: (frameTimeNanos: Long) -> R): R {
             frameTimeNanos += 16_000_000L
             return onFrame(frameTimeNanos)
+        }
+    }
+
+    /** Waits 16ms of virtual time per frame, so a test can interrupt an animation part-way. */
+    private class DelayFrameClock(private val scheduler: TestCoroutineScheduler) : MonotonicFrameClock {
+        override suspend fun <R> withFrameNanos(onFrame: (frameTimeNanos: Long) -> R): R {
+            delay(16)
+            return onFrame(scheduler.currentTime * 1_000_000L)
         }
     }
 
@@ -74,6 +90,31 @@ class TimelineStateTest {
     }
 
     @Test
+    fun pinchKeepsTimeUnderFingers() {
+        val state = state()
+        val focusTime = state.xToTime(200f)
+        state.zoomBy(1.5f, 200f)
+        assertEquals(96f, state.dpPerUnit, EPSILON)
+        assertEquals(200f, state.timeToX(focusTime), EPSILON)
+    }
+
+    @Test
+    fun unitButtonReturnsToStandardWidth() = runTest {
+        val state = state(unit = TimeUnit.DAY, dpPerUnit = 90f)
+        withContext(TestFrameClock()) { state.animateZoomTo(ZoomLevel(TimeUnit.DAY, 64f)) }
+        assertEquals(ZoomLevel(TimeUnit.DAY, 64f), state.zoomLevel)
+        assertEquals(noon, state.centerTime, 0.0)
+    }
+
+    @Test
+    fun unitButtonMovesToNextUnit() = runTest {
+        val state = state(unit = TimeUnit.DAY, dpPerUnit = 64f)
+        withContext(TestFrameClock()) { state.animateZoomTo(ZoomLevel(TimeUnit.WEEK, 112f)) }
+        assertEquals(ZoomLevel(TimeUnit.WEEK, 112f), state.zoomLevel)
+        assertEquals(noon, state.centerTime, 0.0)
+    }
+
+    @Test
     fun verticalScrollStopsAtTopAndBottom() {
         val state = state()
         assertEquals(0f, state.scrollBy(0f, 100f).y, EPSILON)
@@ -102,10 +143,40 @@ class TimelineStateTest {
     }
 
     @Test
+    fun zoomStopsAtTheMaximum() {
+        val state = state(dpPerUnit = 250f)
+        state.zoomBy(2f, 500f)
+        assertEquals(256f, state.dpPerUnit, EPSILON)
+    }
+
+    @Test
+    fun zoomPastAThresholdSwitchesUnit() {
+        val state = state(unit = TimeUnit.DAY, dpPerUnit = 380f)
+        state.zoomBy(1.05f, 500f)
+        assertEquals(TimeUnit.HOUR, state.unit)
+        assertEquals(399f / 24, state.dpPerUnit, EPSILON)
+    }
+
+    @Test
+    fun widthMultiplierRaisesTheMaximum() {
+        val state = state(dpPerUnit = 500f)
+        state.widthMultiplier = 2f
+        state.zoomBy(2f, 500f)
+        assertEquals(512f, state.dpPerUnit, EPSILON)
+    }
+
+    @Test
+    fun monthToHourAnimationEndsExactlyOnTarget() = runTest {
+        val state = state(unit = TimeUnit.MONTH, dpPerUnit = 90f)
+        withContext(TestFrameClock()) { state.animateZoomTo(ZoomLevel(TimeUnit.HOUR, 64f)) }
+        assertEquals(ZoomLevel(TimeUnit.HOUR, 64f), state.zoomLevel)
+    }
+
+    @Test
     fun tallerViewportAfterRotationClampsScroll() {
         val state = state()
         state.scrollBy(0f, -10_000f)
-        state.updateLayout(DENSITY, WIDTH_PX, 600f, 10, ROW_PX)
+        state.updateLayout(DENSITY, AXIS_LEFT_PX, WIDTH_PX, 600f, 10, ROW_PX)
         assertEquals(680f, state.scrollY, EPSILON)
     }
 
@@ -136,8 +207,36 @@ class TimelineStateTest {
         assertEquals(TimeLimits.MAX.toDouble(), state.centerTime, 0.0)
     }
 
+    @Test
+    fun touchStopsFling() = runTest {
+        val state = state()
+        val fling = launch(DelayFrameClock(testScheduler)) { state.fling(Velocity(-20_000f, 0f)) }
+        advanceTimeBy(100)
+        state.stopAnimation()
+        val stoppedAt = state.centerTime
+        advanceTimeBy(1_000)
+        assertTrue(fling.isCancelled)
+        assertEquals(stoppedAt, state.centerTime, 0.0)
+    }
+
+    @Test
+    fun touchStopsUnitButtonAnimation() = runTest {
+        val state = state(unit = TimeUnit.DAY, dpPerUnit = 64f)
+        val animation = launch(DelayFrameClock(testScheduler)) {
+            state.animateZoomTo(ZoomLevel(TimeUnit.WEEK, 112f))
+        }
+        advanceTimeBy(100)
+        state.stopAnimation()
+        val stoppedAt = state.zoomLevel
+        advanceTimeBy(1_000)
+        assertTrue(animation.isCancelled)
+        assertEquals(stoppedAt, state.zoomLevel)
+        assertNotEquals(ZoomLevel(TimeUnit.WEEK, 112f), state.zoomLevel)
+    }
+
     private companion object {
         const val DENSITY = 2f
+        const val AXIS_LEFT_PX = 380f
         const val WIDTH_PX = 1_000f
         const val HEIGHT_PX = 300f
         const val ROW_PX = 128f

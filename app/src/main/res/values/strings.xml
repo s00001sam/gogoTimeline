@@ -1,4 +1,8 @@
 <resources>
     <string name="app_name">gogoTimeline</string>
     <string name="sample_board_name">Sample board</string>
+    <string name="unit_hour">Hour</string>
+    <string name="unit_day">Day</string>
+    <string name="unit_week">Week</string>
+    <string name="unit_month">Month</string>
 </resources>

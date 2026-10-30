@@ -1,8 +1,12 @@
 package com.sam.gogotimeline.ui.timeline
 
 import androidx.compose.animation.core.AnimationState
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.MutatePriority
+import androidx.compose.foundation.MutatorMutex
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -17,12 +21,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Velocity
 import com.sam.gogotimeline.core.LayoutConst
+import com.sam.gogotimeline.core.TimeConst
 import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeScale
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.Viewport
+import com.sam.gogotimeline.core.time.ZoomLevel
+import kotlin.math.pow
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
@@ -49,7 +56,11 @@ class TimelineState(
 
     var calendar by mutableStateOf(calendar)
         internal set
+    var widthMultiplier by mutableFloatStateOf(TimeConst.WIDTH_MULTIPLIER_DEFAULT)
+        internal set
     var density by mutableFloatStateOf(1f)
+        private set
+    var axisLeftPx by mutableFloatStateOf(0f)
         private set
     var viewportWidthPx by mutableFloatStateOf(0f)
         private set
@@ -58,7 +69,12 @@ class TimelineState(
     private var rowCount by mutableIntStateOf(0)
     private var rowHeightPx by mutableFloatStateOf(0f)
 
+    // Only one animation (fling or unit-button zoom) changes the view at a time; a touch cancels it.
+    private val mutatorMutex = MutatorMutex()
+
     val viewport: Viewport get() = Viewport(centerTime, unit, dpPerUnit)
+
+    val zoomLevel: ZoomLevel get() = ZoomLevel(unit, dpPerUnit)
 
     fun scale(): TimeScale = TimeScale(viewport, calendar, density, viewportWidthPx)
 
@@ -88,20 +104,59 @@ class TimelineState(
         return Offset(if (centerTime != oldCenterTime) dx else 0f, oldScrollY - scrollY)
     }
 
-    /** Decays [velocity] (px/s) and stops at a limit; cancel the calling coroutine to stop it early. */
-    suspend fun fling(velocity: Velocity) = coroutineScope {
-        if (velocity.x != 0f) launch { decay(velocity.x) { scrollBy(it, 0f).x } }
-        if (velocity.y != 0f) launch { decay(velocity.y) { scrollBy(0f, it).y } }
+    /** Zooms around [focusX] (px from the time axis' left edge); the unit may switch automatically. */
+    fun zoomBy(
+        factor: Float,
+        focusX: Float,
+    ) {
+        val zoomed = scale().zoomBy(factor, focusX, widthMultiplier)
+        centerTime = zoomed.centerTime
+        unit = zoomed.unit
+        dpPerUnit = zoomed.dpPerUnit
+    }
+
+    /** Decays [velocity] (px/s) and stops at a limit or when a touch calls [stopAnimation]. */
+    suspend fun fling(velocity: Velocity) = mutatorMutex.mutate {
+        coroutineScope {
+            if (velocity.x != 0f) launch { decay(velocity.x) { scrollBy(it, 0f).x } }
+            if (velocity.y != 0f) launch { decay(velocity.y) { scrollBy(0f, it).y } }
+        }
+    }
+
+    /**
+     * Smoothly zooms to [target] around the center. The animation runs in the coarser of the two units
+     * so the header never builds thousands of fine ticks mid-way, and on a log scale so it looks even.
+     */
+    suspend fun animateZoomTo(target: ZoomLevel) = mutatorMutex.mutate {
+        val animationUnit = if (target.unit.ordinal > unit.ordinal) target.unit else unit
+        val from = scale().convertTo(animationUnit).dpPerUnit
+        val to = TimeScale(Viewport(centerTime, target.unit, target.dpPerUnit), calendar, density, viewportWidthPx)
+            .convertTo(animationUnit)
+            .dpPerUnit
+        unit = animationUnit
+        dpPerUnit = from
+        animate(0f, 1f, animationSpec = tween(LayoutConst.ZOOM_ANIMATION_MILLIS)) { progress, _ ->
+            dpPerUnit = from * (to / from).pow(progress)
+        }
+        unit = target.unit
+        dpPerUnit = target.dpPerUnit
+    }
+
+    /** Called on touch-down: cancels a running fling or zoom animation. */
+    suspend fun stopAnimation() {
+        mutatorMutex.mutate(MutatePriority.UserInput) {}
     }
 
     internal fun updateLayout(
         density: Float,
+        axisLeftPx: Float,
         viewportWidthPx: Float,
         viewportHeightPx: Float,
         rowCount: Int,
         rowHeightPx: Float,
     ) {
         this.density = density
+        this.axisLeftPx = axisLeftPx
         this.viewportWidthPx = viewportWidthPx
         this.viewportHeightPx = viewportHeightPx
         this.rowCount = rowCount

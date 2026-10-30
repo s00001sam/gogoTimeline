@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.Layout
@@ -16,8 +17,10 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sam.gogotimeline.core.LayoutConst
+import com.sam.gogotimeline.core.TimeConst
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TimeUnit
+import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
 import com.sam.gogotimeline.ui.theme.GogoTimelineTheme
@@ -35,8 +38,12 @@ fun TimelineScheduler(
     state: TimelineState,
     calendar: CalendarContext,
     leftPaneWidth: Dp,
+    widthMultiplier: Float = TimeConst.WIDTH_MULTIPLIER_DEFAULT,
+    onZoomChange: (ZoomLevel) -> Unit = {},
 ) {
     LaunchedEffect(calendar) { state.calendar = calendar }
+    LaunchedEffect(widthMultiplier) { state.widthMultiplier = widthMultiplier }
+    val currentOnZoomChange = rememberUpdatedState(onZoomChange)
     val now = rememberNow()
     val tickCache = remember { TickCache() }
     val textMeasurer = rememberTextMeasurer(cacheSize = TEXT_MEASURER_CACHE_SIZE)
@@ -50,7 +57,7 @@ fun TimelineScheduler(
         modifier = modifier
             .background(colorScheme.background)
             .clipToBounds()
-            .timelineGestures(state),
+            .timelineGestures(state, currentOnZoomChange),
         contents = listOf(
             { Box(Modifier.background(colorScheme.surface)) },
             {
@@ -79,6 +86,7 @@ fun TimelineScheduler(
         val bodyHeight = height - top
         state.updateLayout(
             density = density,
+            axisLeftPx = left.toFloat(),
             viewportWidthPx = axisWidth.toFloat(),
             viewportHeightPx = bodyHeight.toFloat(),
             rowCount = 0,

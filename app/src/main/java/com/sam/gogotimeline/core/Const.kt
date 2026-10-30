@@ -104,6 +104,7 @@ object LayoutConst {
     const val HANDLE_INSIDE_DP = 16f
 
     // Gestures
+    const val ZOOM_ANIMATION_MILLIS = 300
     const val EDGE_AUTO_SCROLL_ZONE_DP = 48f
     const val MAX_AUTO_SCROLL_SPEED_DP_PER_SECOND = 600f
     const val LONG_PRESS_TIMEOUT_MILLIS = 400L
