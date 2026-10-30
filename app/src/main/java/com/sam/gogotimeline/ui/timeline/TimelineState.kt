@@ -24,6 +24,7 @@ import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.TimeConst
 import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
+import com.sam.gogotimeline.core.time.TimeLimits
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeScale
 import com.sam.gogotimeline.core.time.TimeUnit
@@ -140,6 +141,21 @@ class TimelineState(
         }
         unit = target.unit
         dpPerUnit = target.dpPerUnit
+    }
+
+    /**
+     * Smoothly scrolls so [time] is centered, keeping unit and zoom. Moves in unit coordinates so months
+     * of different lengths scroll at an even speed; takes the same time however far away [time] is.
+     */
+    suspend fun animateCenterTo(time: Double) = mutatorMutex.mutate {
+        val target = TimeLimits.clamp(time)
+        val axis = calendar.axis(unit)
+        val from = axis.position(centerTime)
+        val to = axis.position(target)
+        animate(0f, 1f, animationSpec = tween(LayoutConst.ZOOM_ANIMATION_MILLIS)) { progress, _ ->
+            centerTime = axis.timeAt(from + (to - from) * progress)
+        }
+        centerTime = target
     }
 
     /** Called on touch-down: cancels a running fling or zoom animation. */

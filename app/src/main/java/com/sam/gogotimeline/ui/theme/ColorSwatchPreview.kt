@@ -43,7 +43,11 @@ private fun TaskColorSwatchPreview() {
                     ) {
                         Text(
                             text = "09:00",
-                            color = colors.textOnTask,
+                            modifier = Modifier.background(
+                                colors.barLabelBackground,
+                                RoundedCornerShape(LayoutConst.BAR_LABEL_CORNER_DP.dp),
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }

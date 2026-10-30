@@ -73,7 +73,7 @@ object LayoutConst {
     const val ROW_BUFFER = 2
 
     // Header
-    const val HEADER_TOP_TIER_HEIGHT_DP = 20f
+    const val HEADER_TOP_TIER_HEIGHT_DP = 24f
     const val HEADER_BOTTOM_TIER_HEIGHT_DP = 28f
     const val MIN_TICK_LABEL_SPACING_DP = 40f
     const val TICK_LABEL_PADDING_DP = 4f
@@ -90,11 +90,44 @@ object LayoutConst {
     const val NOW_DOT_RADIUS_DP = 3f
 
     // Left pane
-    const val NAME_COLUMN_PHONE_COLLAPSED_DP = 64f
-    const val NAME_COLUMN_PHONE_EXPANDED_DP = 80f
-    const val NAME_COLUMN_TABLET_COLLAPSED_DP = 160f
-    const val NAME_COLUMN_TABLET_EXPANDED_DP = 240f
-    const val TIME_COLUMN_WIDTH_DP = 110f
+    const val NAME_COLUMN_PHONE_COLLAPSED_DP = 100f
+    const val NAME_COLUMN_PHONE_EXPANDED_DP = 160f
+    const val NAME_COLUMN_TABLET_COLLAPSED_DP = 180f
+    const val NAME_COLUMN_TABLET_EXPANDED_DP = 280f
+    const val LEFT_PANE_PADDING_DP = 8f
+    const val NAME_MAX_LINES = 2
+
+    const val EMPTY_STATE_ICON_DP = 48f
+    const val EMPTY_STATE_SPACING_DP = 16f
+
+    // Translucent backing behind the time text inside bars.
+    const val BAR_LABEL_CORNER_DP = 4f
+    const val BAR_LABEL_PADDING_HORIZONTAL_DP = 4f
+    const val BAR_LABEL_PADDING_VERTICAL_DP = 2f
+
+    // Prefix of a label whose bar is completely off screen: the task lies earlier (left) or later (right).
+    const val BAR_LABEL_EARLIER_PREFIX = "‹ "
+    const val BAR_LABEL_LATER_PREFIX = "› "
+
+    // Scheduler text sizes and line heights in dp: fixed, ignoring the system font scale (spec 10.3.1).
+    const val TEXT_TICK_TOP_DP = 16f
+    const val TEXT_TICK_TOP_LINE_DP = 20f
+    const val TEXT_TICK_BOTTOM_DP = 14f
+    const val TEXT_TICK_BOTTOM_LINE_DP = 18f
+    const val TEXT_TASK_NAME_DP = 14f
+    const val TEXT_TASK_NAME_LINE_DP = 18f
+    const val TEXT_BAR_DP = 13f
+    const val TEXT_BAR_LINE_DP = 16f
+
+    // "Go to today" button: today's day of month inside a small rounded box.
+    const val TODAY_BOX_SIZE_DP = 22f
+    const val TODAY_BOX_BORDER_DP = 1.5f
+    const val TODAY_BOX_CORNER_DP = 4f
+    const val TODAY_BOX_TEXT_DP = 11f
+
+    // The whole top-left corner toggles the left pane, so the visible arrow can stay small.
+    const val CORNER_ARROW_SIZE_DP = 24f
+    const val CORNER_ARROW_ICON_DP = 18f
 
     // Task bar
     const val BAR_VERTICAL_PADDING_DP = 8f

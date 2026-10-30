@@ -234,6 +234,63 @@ class TimelineStateTest {
         assertNotEquals(ZoomLevel(TimeUnit.WEEK, 112f), state.zoomLevel)
     }
 
+    @Test
+    fun goToTimeCentersItAndKeepsTheRest() = runTest {
+        val state = state(scrollY = 256f)
+        withContext(TestFrameClock()) { state.animateCenterTo(noon + 5 * HOUR_MS) }
+        assertEquals(noon + 5 * HOUR_MS, state.centerTime, 0.0)
+        assertEquals(ZoomLevel(TimeUnit.HOUR, 64f), state.zoomLevel)
+        assertEquals(256f, state.scrollY, EPSILON)
+    }
+
+    @Test
+    fun goToTimeFromFarAwayIsJustAsFast() = runTest {
+        val state = state(centerTime = TAIPEI.at("1950-01-01T12:00").toDouble())
+        val clock = CountingFrameClock()
+        withContext(clock) { state.animateCenterTo(noon) }
+        assertEquals(noon, state.centerTime, 0.0)
+        assertTrue(clock.frames <= 21)
+    }
+
+    @Test
+    fun goToTimeBeyondTheLimitStopsAtTheLimit() = runTest {
+        val state = state()
+        withContext(TestFrameClock()) { state.animateCenterTo(TimeLimits.MAX + 1e12) }
+        assertEquals(TimeLimits.MAX.toDouble(), state.centerTime, 0.0)
+    }
+
+    @Test
+    fun goToTimeInMonthModeLandsExactly() = runTest {
+        val target = TAIPEI.at("2027-04-01T00:00").toDouble()
+        val state = state(unit = TimeUnit.MONTH, dpPerUnit = 90f)
+        withContext(TestFrameClock()) { state.animateCenterTo(target) }
+        assertEquals(target, state.centerTime, 0.0)
+    }
+
+    @Test
+    fun touchStopsGoToTime() = runTest {
+        val state = state()
+        val animation = launch(DelayFrameClock(testScheduler)) { state.animateCenterTo(noon + 100 * HOUR_MS) }
+        advanceTimeBy(100)
+        state.stopAnimation()
+        val stoppedAt = state.centerTime
+        advanceTimeBy(1_000)
+        assertTrue(animation.isCancelled)
+        assertEquals(stoppedAt, state.centerTime, 0.0)
+        assertNotEquals(noon + 100 * HOUR_MS, state.centerTime, 0.0)
+    }
+
+    /** Like [TestFrameClock], and counts how many frames an animation took. */
+    private class CountingFrameClock : MonotonicFrameClock {
+        var frames = 0
+            private set
+
+        override suspend fun <R> withFrameNanos(onFrame: (frameTimeNanos: Long) -> R): R {
+            frames++
+            return onFrame(frames * 16_000_000L)
+        }
+    }
+
     private companion object {
         const val DENSITY = 2f
         const val AXIS_LEFT_PX = 380f

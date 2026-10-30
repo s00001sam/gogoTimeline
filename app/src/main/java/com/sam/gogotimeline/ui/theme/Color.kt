@@ -64,6 +64,6 @@ val TaskColorsDark = listOf(
     Color(0xFFBA68C8),
 )
 
-// One text color per mode for the time range inside bars (at least 4.5:1 on every task color).
-val TextOnTaskLight = Color(0xFFFFFFFF)
-val TextOnTaskDark = Color(0xFF000000)
+// 80% opaque backing behind the time text inside bars, so the primary text color reads on any task color.
+val BarLabelBackgroundLight = Color(0xCCFFFFFF)
+val BarLabelBackgroundDark = Color(0xCC2A2A2A)

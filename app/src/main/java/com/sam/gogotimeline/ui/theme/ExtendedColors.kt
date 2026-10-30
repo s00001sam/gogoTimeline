@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.Color
 @Immutable
 data class ExtendedColors(
     val taskColors: List<Color>,
-    val textOnTask: Color,
+    val barLabelBackground: Color,
     val selectionOutline: Color,
     val nowLine: Color,
     val gridMinor: Color,
@@ -23,7 +23,7 @@ data class ExtendedColors(
 
 internal val LightExtendedColors = ExtendedColors(
     taskColors = TaskColorsLight,
-    textOnTask = TextOnTaskLight,
+    barLabelBackground = BarLabelBackgroundLight,
     selectionOutline = SelectionOutlineLight,
     nowLine = NowLineLight,
     gridMinor = GridMinorLight,
@@ -32,7 +32,7 @@ internal val LightExtendedColors = ExtendedColors(
 
 internal val DarkExtendedColors = ExtendedColors(
     taskColors = TaskColorsDark,
-    textOnTask = TextOnTaskDark,
+    barLabelBackground = BarLabelBackgroundDark,
     selectionOutline = SelectionOutlineDark,
     nowLine = NowLineDark,
     gridMinor = GridMinorDark,
