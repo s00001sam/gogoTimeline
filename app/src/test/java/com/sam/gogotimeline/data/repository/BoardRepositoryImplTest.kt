@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BoardRepositoryImplTest {
@@ -33,6 +34,17 @@ class BoardRepositoryImplTest {
     }
 
     @Test
+    fun boardListIsMappedInTheDataSourcesOrder() = runTest {
+        coEvery { boards.observeBoards() } returns flowOf(
+            listOf(BoardEntity(2, "Recent", null, NOW), BoardEntity(1, "Older", 3, NOW - 1)),
+        )
+        assertEquals(
+            listOf(Board(2, "Recent", null, NOW), Board(1, "Older", 3, NOW - 1)),
+            repository.observeBoards().first(),
+        )
+    }
+
+    @Test
     fun anchorCanBeCleared() = runTest {
         repository.saveAnchor(1, null)
         coVerify { boards.updateAnchor(1, null) }
@@ -44,6 +56,25 @@ class BoardRepositoryImplTest {
         coEvery { boards.getMostRecentBoardId() } returns null
         assertNull(repository.observeBoard(1).first())
         assertNull(repository.getStartBoardId())
+    }
+
+    @Test
+    fun createRenameAndDeleteUseCleanNamesAndIds() = runTest {
+        coEvery { boards.insert(any()) } returns 7
+        assertEquals(7, repository.create("  New board  "))
+        repository.rename(7, "  Renamed  ")
+        repository.delete(7)
+        coVerify { boards.insert(BoardEntity(name = "New board", anchorTaskId = null, lastOpenedAt = NOW)) }
+        coVerify { boards.updateName(7, "Renamed") }
+        coVerify { boards.delete(7) }
+    }
+
+    @Test
+    fun invalidNamesAreRejectedBeforeWriting() = runTest {
+        assertTrue(runCatching { repository.create("   ") }.isFailure)
+        assertTrue(runCatching { repository.rename(7, "\n") }.isFailure)
+        coVerify(exactly = 0) { boards.insert(any()) }
+        coVerify(exactly = 0) { boards.updateName(any(), any()) }
     }
 
     private companion object {

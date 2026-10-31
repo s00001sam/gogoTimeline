@@ -4,6 +4,8 @@ import com.sam.gogotimeline.data.local.BoardEntity
 import kotlinx.coroutines.flow.Flow
 
 interface BoardLocalDataSource {
+    fun observeBoards(): Flow<List<BoardEntity>>
+
     fun observeBoard(id: Long): Flow<BoardEntity?>
 
     suspend fun getMostRecentBoardId(): Long?
@@ -19,4 +21,13 @@ interface BoardLocalDataSource {
     )
 
     suspend fun clearAnchor(taskId: Long)
+
+    suspend fun insert(board: BoardEntity): Long
+
+    suspend fun updateName(
+        id: Long,
+        name: String,
+    )
+
+    suspend fun delete(id: Long)
 }

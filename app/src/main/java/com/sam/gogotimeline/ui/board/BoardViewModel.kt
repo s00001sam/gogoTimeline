@@ -38,8 +38,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Opens the most recently used board (step 7 moves this choice to a start screen). Time changes go to a draft
- * that is written only on Save; reordering is saved right away.
+ * Loads the board selected by the app layer. Time changes go to a draft that is written only on Save; reordering is
+ * saved right away.
  */
 @HiltViewModel
 class BoardViewModel @Inject constructor(
@@ -49,20 +49,20 @@ class BoardViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val loadRequests = MutableStateFlow(0)
+    private val boardId = MutableStateFlow<Long?>(null)
     private val edit = MutableStateFlow(EditSession.restore(savedStateHandle))
     private val editStatus = MutableStateFlow(EditStatus())
     private val topRowIndex = MutableStateFlow<Int?>(null)
-    private val settingsRequests = Channel<Unit>(Channel.CONFLATED)
+    private val actionRequests = Channel<BoardAction>(Channel.CONFLATED)
 
-    // Settings was selected with unsaved changes: it opens once Save or Discard ends editing.
-    private var openSettingsAfterEditing = false
+    private var actionAfterEditing: BoardAction? = null
 
-    /** One event each time Settings should open. */
-    val openSettings: Flow<Unit> = settingsRequests.receiveAsFlow()
+    /** App-level action to perform after this board has safely finished editing. */
+    val actions: Flow<BoardAction> = actionRequests.receiveAsFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val uiState: StateFlow<BoardUiState> = loadRequests
-        .flatMapLatest { load() }
+    val uiState: StateFlow<BoardUiState> = combine(boardId.filterNotNull(), loadRequests) { id, _ -> id }
+        .flatMapLatest(::load)
         .stateIn(viewModelScope, SharingStarted.Eagerly, BoardUiState.Loading)
 
     private val ready: BoardUiState.Ready? get() = uiState.value as? BoardUiState.Ready
@@ -80,6 +80,11 @@ class BoardViewModel @Inject constructor(
         }
     }
 
+    /** Called by the route host; the id is data, while navigation stays outside this ViewModel. */
+    fun openBoard(id: Long) {
+        if (boardId.value != id) boardId.value = id
+    }
+
     fun onTaskTap(taskId: Long) {
         if (edit.value != null) return
         val task = ready?.tasks?.firstOrNull { it.id == taskId } ?: return
@@ -92,22 +97,22 @@ class BoardViewModel @Inject constructor(
         setEdit(EditSession.newTask(schedule, Random.nextInt(LayoutConst.TASK_COLOR_COUNT)))
     }
 
-    /** With unsaved changes, opening Settings asks Save / Discard first, like any other way of leaving the editor. */
-    fun onOpenSettings() {
+    /** Leaving the board first resolves an unsaved task draft; the app layer performs [action]. */
+    fun onAppAction(action: BoardAction) {
         val session = edit.value
         when {
-            session == null -> settingsRequests.trySend(Unit)
+            session == null -> actionRequests.trySend(action)
 
             editStatus.value.isBusy -> Unit
 
             session.isDirty -> {
-                openSettingsAfterEditing = true
+                actionAfterEditing = action
                 editStatus.value = EditStatus(confirmingClose = true)
             }
 
             else -> {
                 endEditing()
-                settingsRequests.trySend(Unit)
+                actionRequests.trySend(action)
             }
         }
     }
@@ -200,7 +205,7 @@ class BoardViewModel @Inject constructor(
     /** Closes the Save / Discard or Delete dialog and goes back to editing with the draft kept. */
     fun onCancelDialog() {
         if (editStatus.value.isBusy) return
-        openSettingsAfterEditing = false
+        actionAfterEditing = null
         editStatus.value = EditStatus()
     }
 
@@ -275,10 +280,8 @@ class BoardViewModel @Inject constructor(
     private fun endEditing() {
         setEdit(null)
         editStatus.value = EditStatus()
-        if (openSettingsAfterEditing) {
-            openSettingsAfterEditing = false
-            settingsRequests.trySend(Unit)
-        }
+        actionAfterEditing?.let(actionRequests::trySend)
+        actionAfterEditing = null
     }
 
     private fun setEdit(session: EditSession?) {
@@ -286,12 +289,7 @@ class BoardViewModel @Inject constructor(
         if (session == null) EditSession.clear(savedStateHandle) else session.save(savedStateHandle)
     }
 
-    private fun load(): Flow<BoardUiState> = flow {
-        val boardId = boardRepository.getStartBoardId()
-        if (boardId == null) {
-            emit(BoardUiState.Error)
-            return@flow
-        }
+    private fun load(boardId: Long): Flow<BoardUiState> = flow {
         ignoreFailure { boardRepository.markOpened(boardId) }
         emitAll(
             combine(
@@ -320,4 +318,16 @@ class BoardViewModel @Inject constructor(
         } catch (_: Exception) {
         }
     }
+}
+
+sealed interface BoardAction {
+    data object OpenSettings : BoardAction
+
+    data object CreateBoard : BoardAction
+
+    data object RenameBoard : BoardAction
+
+    data object DeleteBoard : BoardAction
+
+    data class SwitchBoard(val boardId: Long) : BoardAction
 }

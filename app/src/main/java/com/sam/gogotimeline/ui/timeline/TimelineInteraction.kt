@@ -199,7 +199,9 @@ internal class TimelineInteraction(
             // Blank space in the row being edited does nothing, so a near miss never leaves edit mode.
             is HitTarget.RowBlank -> if (target.taskId != selectedTaskId) tapTask(target.taskId)
 
-            HitTarget.Empty -> callbacks.onEmptyTap()
+            // With no selection this is a no-op. In particular, the empty-state Button handles its own click;
+            // the same pointer must not immediately close the new draft it just created.
+            HitTarget.Empty -> if (selectedTaskId != null) callbacks.onEmptyTap()
 
             else -> Unit
         }

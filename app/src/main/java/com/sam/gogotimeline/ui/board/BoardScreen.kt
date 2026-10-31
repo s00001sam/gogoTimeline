@@ -52,6 +52,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -62,6 +63,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -104,12 +106,19 @@ import kotlinx.coroutines.launch
 @Composable
 fun BoardScreen(
     modifier: Modifier = Modifier,
-    onOpenSettings: () -> Unit = {},
+    boardId: Long,
+    openNewTask: Boolean = false,
+    onNewTaskOpened: () -> Unit = {},
+    onAppAction: (BoardAction) -> Unit = {},
+    showNavigation: Boolean = false,
+    onOpenDrawer: () -> Unit = {},
+    interactionBlocked: Boolean = false,
     viewModel: BoardViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(viewModel, boardId) { viewModel.openBoard(boardId) }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val currentOnOpenSettings by rememberUpdatedState(onOpenSettings)
-    LaunchedEffect(viewModel) { viewModel.openSettings.collect { currentOnOpenSettings() } }
+    val currentOnAppAction by rememberUpdatedState(onAppAction)
+    LaunchedEffect(viewModel) { viewModel.actions.collect { currentOnAppAction(it) } }
     val ready = uiState as? BoardUiState.Ready
     val settings = ready?.settings ?: TimelineSettings.DEFAULT
     val calendar = rememberCalendarContext()
@@ -179,6 +188,21 @@ fun BoardScreen(
             onVerticalScrollSettled = viewModel::onVerticalScrollSettled,
         )
     }
+    val createNewTask = {
+        val unit = state.unit
+        val grid = calendar.grid(settings.snapFor(unit))
+        val range = TaskTimes.newTaskRange(System.currentTimeMillis(), unit, grid, calendar)
+        viewModel.onNewTask(TaskSchedule.from(range, calendar))
+        val visible = state.timeToX(range.end.toDouble()) > 0f &&
+            state.timeToX(range.start.toDouble()) < state.viewportWidthPx
+        if (!visible) scope.launch { state.animateTimeToX(range.start.toDouble(), marginPx) }
+    }
+    LaunchedEffect(ready != null, openNewTask) {
+        if (ready != null && openNewTask) {
+            createNewTask()
+            onNewTaskOpened()
+        }
+    }
     BoardContent(
         modifier = modifier,
         boardName = ready?.board?.name.orEmpty(),
@@ -195,18 +219,15 @@ fun BoardScreen(
         todayDayOfMonth = todayDayOfMonth,
         onGoToToday = { scope.launch { state.animateCenterTo(System.currentTimeMillis().toDouble()) } },
         onZoomChange = viewModel::onZoomChange,
-        onSettingsClick = viewModel::onOpenSettings,
+        onSettingsClick = { viewModel.onAppAction(BoardAction.OpenSettings) },
+        onRenameBoard = { viewModel.onAppAction(BoardAction.RenameBoard) },
+        onDeleteBoard = { viewModel.onAppAction(BoardAction.DeleteBoard) },
+        showNavigation = showNavigation,
+        onOpenDrawer = onOpenDrawer,
+        interactionBlocked = interactionBlocked,
         // Starts at "now" floored to the current snap and lasts two of the current unit (spec 7.3); an off-screen
         // bar is scrolled to like a tapped off-screen task.
-        onNewTask = {
-            val unit = state.unit
-            val grid = calendar.grid(settings.snapFor(unit))
-            val range = TaskTimes.newTaskRange(System.currentTimeMillis(), unit, grid, calendar)
-            viewModel.onNewTask(TaskSchedule.from(range, calendar))
-            val visible = state.timeToX(range.end.toDouble()) > 0f &&
-                state.timeToX(range.start.toDouble()) < state.viewportWidthPx
-            if (!visible) scope.launch { state.animateTimeToX(range.start.toDouble(), marginPx) }
-        },
+        onNewTask = createNewTask,
         sheet = sheet,
         onTitleChange = viewModel::onTitleChange,
         onNotesChange = viewModel::onNotesChange,
@@ -278,6 +299,11 @@ fun BoardContent(
     onGoToToday: () -> Unit,
     onZoomChange: (ZoomLevel) -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    onRenameBoard: () -> Unit = {},
+    onDeleteBoard: () -> Unit = {},
+    showNavigation: Boolean = false,
+    onOpenDrawer: () -> Unit = {},
+    interactionBlocked: Boolean = false,
     onNewTask: () -> Unit = {},
     sheet: TaskSheetState? = null,
     onTitleChange: (String) -> Unit = {},
@@ -289,9 +315,10 @@ fun BoardContent(
     onCloseEditor: () -> Unit = {},
     onConfirmEdit: () -> Unit = {},
     onDeleteTask: () -> Unit = {},
+    hasBoard: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
-    val interactive = !isLoading && !isError
+    val interactive = hasBoard && !isLoading && !isError
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     // The sheet stays hidden until a task is edited; it keeps the last content while it slides away.
@@ -416,7 +443,24 @@ fun BoardContent(
         },
         topBar = {
             TopAppBar(
-                title = { Text(boardName, style = MaterialTheme.typography.titleMedium) },
+                title = {
+                    Text(
+                        boardName,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = {
+                    if (showNavigation) {
+                        IconButton(onClick = onOpenDrawer) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_menu),
+                                contentDescription = stringResource(R.string.open_boards),
+                            )
+                        }
+                    }
+                },
                 actions = {
                     if (interactive) {
                         TodayButton(dayOfMonth = todayDayOfMonth, onClick = onGoToToday)
@@ -435,7 +479,11 @@ fun BoardContent(
                         ) {
                             Text(stringResource(state.unit.labelRes()))
                         }
-                        OverflowMenu(onSettingsClick = onSettingsClick)
+                        OverflowMenu(
+                            onSettingsClick = onSettingsClick,
+                            onRenameClick = onRenameBoard,
+                            onDeleteClick = onDeleteBoard,
+                        )
                     }
                 },
             )
@@ -465,9 +513,23 @@ fun BoardContent(
                 onNewTask = onNewTask,
                 showEmptyState = interactive,
             )
+            if (interactionBlocked) {
+                // The drawer scrim may not consume the first down event while its opening animation starts.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                }
+                            }
+                        },
+                )
+            }
             // Hidden while editing so it never covers the sheet (spec 7.3).
             AnimatedVisibility(
-                visible = interactive && !editing,
+                visible = interactive && tasks.isNotEmpty() && !editing,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .windowInsetsPadding(WindowInsets.navigationBars)
@@ -492,6 +554,38 @@ fun BoardContent(
             }
         }
     }
+}
+
+/** Background route used when there are no boards; Create board is presented over it by the app layer. */
+@Composable
+fun BlankBoardScreen(modifier: Modifier = Modifier) {
+    val settings = TimelineSettings.DEFAULT
+    val calendar = rememberCalendarContext()
+    val state = rememberTimelineState(
+        initialCenterTime = System.currentTimeMillis().toDouble(),
+        initialUnit = settings.zoom.unit,
+        initialDpPerUnit = settings.zoom.dpPerUnit,
+        calendar = calendar,
+    )
+    val now = rememberNow()
+    val todayDayOfMonth by remember(calendar) { derivedStateOf { calendar.localDate(now.value).dayOfMonth } }
+    BoardContent(
+        modifier = modifier,
+        boardName = "",
+        state = state,
+        calendar = calendar,
+        tasks = emptyList(),
+        settings = settings,
+        selectedTaskId = null,
+        isLoading = false,
+        isError = false,
+        callbacks = TimelineCallbacks(),
+        onToggleLeftPane = {},
+        onRetry = {},
+        todayDayOfMonth = todayDayOfMonth,
+        onGoToToday = {},
+        hasBoard = false,
+    )
 }
 
 /** Blocks touches on the skeleton and shows a spinner, or the error with Retry. Text follows the system font size. */
@@ -568,11 +662,14 @@ private fun TodayButton(
 }
 
 /**
- * The ⋮ menu at the far right of the top bar: Settings now, the board's Rename and Delete in step 7, so the top
- * right never holds more than three buttons.
+ * The ⋮ menu at the far right holds Settings and the board's less frequent Rename and Delete actions.
  */
 @Composable
-private fun OverflowMenu(onSettingsClick: () -> Unit) {
+private fun OverflowMenu(
+    onSettingsClick: () -> Unit,
+    onRenameClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -589,6 +686,22 @@ private fun OverflowMenu(onSettingsClick: () -> Unit) {
                     onSettingsClick()
                 },
                 leadingIcon = { Icon(painter = painterResource(R.drawable.ic_settings), contentDescription = null) },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.rename)) },
+                onClick = {
+                    expanded = false
+                    onRenameClick()
+                },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_edit), contentDescription = null) },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.delete)) },
+                onClick = {
+                    expanded = false
+                    onDeleteClick()
+                },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_delete), contentDescription = null) },
             )
         }
     }

@@ -55,6 +55,17 @@
     <string name="reset_settings_title">Reset all settings?</string>
     <string name="reset">Reset</string>
     <string name="settings_save_failed">Couldn’t save settings.</string>
+    <string name="new_board">New board</string>
+    <string name="rename_board">Rename board</string>
+    <string name="rename">Rename</string>
+    <string name="open_boards">Open boards</string>
+    <string name="delete_board_title">Delete “%1$s”?</string>
+    <string name="delete_board_message">All tasks in this board will be deleted.</string>
+    <string name="delete_board_failed">Couldn’t delete board.</string>
+    <string name="version_label">v%1$s</string>
+    <string name="board_name">Board name</string>
+    <string name="create_board_failed">Couldn’t create board.</string>
+    <string name="rename_board_failed">Couldn’t rename board.</string>
     <string name="snap_hint_interval">Current snap interval: %1$s</string>
     <string name="snap_hint_resize">Resizing will snap your times.</string>
     <plurals name="snap_minutes">

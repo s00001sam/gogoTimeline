@@ -231,7 +231,9 @@ fun TimelineScheduler(
             },
             {
                 Canvas(Modifier.clipToBounds()) {
-                    drawNowLine(state.timeToX(now.value.toDouble()), extendedColors.nowLine)
+                    if (tasks.isNotEmpty()) {
+                        drawNowLine(state.timeToX(now.value.toDouble()), extendedColors.nowLine)
+                    }
                 }
             },
             { LeftPaneBackground(scrollY = { state.scrollY }, rowPx = rowPx) },
@@ -262,7 +264,7 @@ fun TimelineScheduler(
                     val scale = state.scale()
                     val ticks = tickCache.ticks(scale.visibleTimeRange(), state.unit, state.dpPerUnit, state.calendar)
                     drawHeader(ticks, scale, textMeasurer, topStyle, bottomStyle, extendedColors.gridMajor)
-                    drawNowDot(scale.timeToX(now.value), extendedColors.nowLine)
+                    if (tasks.isNotEmpty()) drawNowDot(scale.timeToX(now.value), extendedColors.nowLine)
                 }
             },
             {
@@ -354,7 +356,8 @@ fun TimelineScheduler(
         val corner = measurables[6].first().measure(Constraints.fixed(left, top))
         val dragLabel = measurables[7].first().measure(bodyConstraints)
         val snapHint = measurables[8].first().measure(bodyConstraints)
-        val empty = measurables[9].firstOrNull()?.measure(Constraints(maxWidth = axisWidth, maxHeight = bodyHeight))
+        // The empty state is centered on the whole scheduler width, left pane included, not just the time axis.
+        val empty = measurables[9].firstOrNull()?.measure(Constraints(maxWidth = width, maxHeight = bodyHeight))
 
         layout(width, height) {
             fun rowTop(index: Int): Float = top + index * rowPx - state.scrollY
@@ -370,7 +373,7 @@ fun TimelineScheduler(
             corner.place(0, 0)
             dragLabel.place(left, top)
             snapHint.place(left, top)
-            empty?.place(left + (axisWidth - empty.width) / 2, top + (bodyHeight - empty.height) / 2)
+            empty?.place((width - empty.width) / 2, top + (bodyHeight - empty.height) / 2)
         }
     }
 }

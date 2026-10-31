@@ -97,6 +97,13 @@ class TimelineInteractionTest {
     }
 
     @Test
+    fun emptyBoardTapDoesNotCloseTheDraftCreatedByItsButton() = runTest {
+        val (interaction, _, recorder) = setUp(tasks = emptyList())
+        interaction.onTap(HitTarget.Empty)
+        assertTrue(recorder.events.isEmpty())
+    }
+
+    @Test
     fun anyRowCanBeLongPressed() = runTest {
         val (interaction, _, _) = setUp()
         assertTrue(interaction.canLongPress(HitTarget.RowBlank(1)))

@@ -3,7 +3,6 @@ package com.sam.gogotimeline.ui.settings
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,11 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -31,7 +28,6 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -60,6 +56,7 @@ import com.sam.gogotimeline.ui.board.ConfirmDialogContent
 import com.sam.gogotimeline.ui.board.ConfirmDialogWindow
 import com.sam.gogotimeline.ui.board.PrimaryDialogButton
 import com.sam.gogotimeline.ui.board.SecondaryDialogButton
+import com.sam.gogotimeline.ui.navigation.PageDialogFrame
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
 import com.sam.gogotimeline.ui.snapIntervalLabel
@@ -101,26 +98,9 @@ fun SettingsScreen(
             onResetClick = viewModel::onResetClick,
         )
     }
-    if (asDialog) SettingsDialogFrame(modifier, content) else content(modifier.fillMaxSize())
+    if (asDialog) PageDialogFrame(modifier, content) else content(modifier.fillMaxSize())
     if (shown.showResetDialog) {
         ResetDialog(onReset = viewModel::onResetConfirm, onCancel = viewModel::onResetDismiss)
-    }
-}
-
-/** The tablet dialog's size: 560dp wide, 80% of the screen tall but at most 560dp, 28dp corners. */
-@Composable
-private fun SettingsDialogFrame(
-    modifier: Modifier = Modifier,
-    content: @Composable (Modifier) -> Unit,
-) {
-    BoxWithConstraints(modifier = modifier) {
-        val height = minOf(maxHeight * LayoutConst.DIALOG_HEIGHT_FRACTION, LayoutConst.DIALOG_MAX_HEIGHT_DP.dp)
-        Surface(
-            modifier = Modifier.size(LayoutConst.DIALOG_WIDTH_DP.dp, height),
-            shape = RoundedCornerShape(LayoutConst.DIALOG_CORNER_RADIUS_DP.dp),
-        ) {
-            content(Modifier.fillMaxSize())
-        }
     }
 }
 
@@ -394,7 +374,7 @@ private fun SettingsPreview(
                 onResetClick = {},
             )
         }
-        if (asDialog) SettingsDialogFrame(content = content) else content(Modifier.fillMaxSize())
+        if (asDialog) PageDialogFrame(content = content) else content(Modifier.fillMaxSize())
     }
 }
 

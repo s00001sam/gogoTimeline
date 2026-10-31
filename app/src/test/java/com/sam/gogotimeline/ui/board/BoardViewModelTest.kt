@@ -66,7 +66,6 @@ class BoardViewModelTest {
     private val settings = MutableSharedFlow<TimelineSettings>(replay = 1).apply { tryEmit(TimelineSettings.DEFAULT) }
 
     private val boardRepository = mockk<BoardRepository>(relaxed = true) {
-        coEvery { getStartBoardId() } returns BOARD
         every { observeBoard(BOARD) } returns board
     }
     private val taskRepository = mockk<TaskRepository>(relaxed = true) {
@@ -77,7 +76,7 @@ class BoardViewModelTest {
     }
 
     private fun viewModel(savedState: SavedStateHandle = SavedStateHandle()) =
-        BoardViewModel(boardRepository, taskRepository, settingsRepository, savedState)
+        BoardViewModel(boardRepository, taskRepository, settingsRepository, savedState).also { it.openBoard(BOARD) }
 
     private val BoardViewModel.ready get() = uiState.value as BoardUiState.Ready
 
@@ -319,17 +318,17 @@ class BoardViewModelTest {
     @Test
     fun settingsOpensRightAwayWhenNotEditing() = runTest {
         val viewModel = viewModel()
-        viewModel.onOpenSettings()
-        viewModel.openSettings.first()
+        viewModel.onAppAction(BoardAction.OpenSettings)
+        assertEquals(BoardAction.OpenSettings, viewModel.actions.first())
     }
 
     @Test
     fun settingsWithUnsavedChangesAsksFirstAndOpensAfterDiscard() = runTest {
         val viewModel = viewModel()
-        val opened = mutableListOf<Unit>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.openSettings.toList(opened) }
+        val opened = mutableListOf<BoardAction>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.actions.toList(opened) }
         viewModel.editBWithLaterTime()
-        viewModel.onOpenSettings()
+        viewModel.onAppAction(BoardAction.OpenSettings)
         assertTrue(viewModel.ready.editStatus.confirmingClose)
         assertTrue(opened.isEmpty())
         viewModel.onDiscard()
@@ -338,12 +337,25 @@ class BoardViewModelTest {
     }
 
     @Test
+    fun switchingBoardsWaitsForUnsavedChangesToBeDiscarded() = runTest {
+        val viewModel = viewModel()
+        val actions = mutableListOf<BoardAction>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.actions.toList(actions) }
+        viewModel.editBWithLaterTime()
+        viewModel.onAppAction(BoardAction.SwitchBoard(99))
+        assertTrue(viewModel.ready.editStatus.confirmingClose)
+        assertTrue(actions.isEmpty())
+        viewModel.onDiscard()
+        assertEquals(listOf(BoardAction.SwitchBoard(99)), actions)
+    }
+
+    @Test
     fun cancellingTheSettingsQuestionStaysOnTheBoard() = runTest {
         val viewModel = viewModel()
-        val opened = mutableListOf<Unit>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.openSettings.toList(opened) }
+        val opened = mutableListOf<BoardAction>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.actions.toList(opened) }
         viewModel.editBWithLaterTime()
-        viewModel.onOpenSettings()
+        viewModel.onAppAction(BoardAction.OpenSettings)
         viewModel.onCancelDialog()
         // A later close must not open Settings either.
         viewModel.onEmptyTap()
@@ -357,15 +369,15 @@ class BoardViewModelTest {
         val saving = CompletableDeferred<Unit>()
         coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
         val viewModel = viewModel()
-        val opened = mutableListOf<Unit>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.openSettings.toList(opened) }
+        val opened = mutableListOf<BoardAction>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.actions.toList(opened) }
         viewModel.editBWithLaterTime()
         viewModel.onConfirm(TAIPEI)
-        viewModel.onOpenSettings()
+        viewModel.onAppAction(BoardAction.OpenSettings)
         assertTrue(opened.isEmpty())
         saving.complete(Unit)
         viewModel.onTaskTap(A)
-        viewModel.onOpenSettings()
+        viewModel.onAppAction(BoardAction.OpenSettings)
         assertNull(viewModel.ready.edit)
         assertEquals(1, opened.size)
     }
@@ -460,7 +472,7 @@ class BoardViewModelTest {
 
     @Test
     fun failedLoadShowsErrorAndRetryRecovers() {
-        coEvery { boardRepository.getStartBoardId() } throws IllegalStateException("disk") andThen BOARD
+        every { boardRepository.observeBoard(BOARD) } throws IllegalStateException("disk") andThen board
         val viewModel = viewModel()
         assertEquals(BoardUiState.Error, viewModel.uiState.value)
         viewModel.retry()
@@ -469,7 +481,7 @@ class BoardViewModelTest {
 
     @Test
     fun noBoardIsAnError() {
-        coEvery { boardRepository.getStartBoardId() } returns null
+        board.value = null
         assertEquals(BoardUiState.Error, viewModel().uiState.value)
     }
 

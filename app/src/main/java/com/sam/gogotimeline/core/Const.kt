@@ -257,4 +257,6 @@ object LayoutConst {
 
     // Drawer
     const val DRAWER_WIDTH_DP = 300f
+    const val DRAWER_PADDING_DP = 16f
+    const val DRAWER_ITEM_SPACING_DP = 2f
 }
