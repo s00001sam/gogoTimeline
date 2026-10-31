@@ -64,6 +64,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -103,6 +105,8 @@ data class TaskSheetState(
     val canSave: Boolean,
     val isSaving: Boolean,
     val saveFailed: Boolean,
+    // A task not saved yet: no Delete, and the sheet opens expanded with the name focused.
+    val isNew: Boolean = false,
 )
 
 /** A start or end as the sheet shows it: the date, and the time unless the task is all-day. */
@@ -136,6 +140,7 @@ fun TaskSheet(
     modifier: Modifier = Modifier,
     state: TaskSheetState,
     expanded: Boolean,
+    focusName: Boolean,
     onTitleChange: (String) -> Unit,
     onNotesChange: (String) -> Unit,
     onDatePick: (Boundary, LocalDate) -> Unit,
@@ -193,6 +198,7 @@ fun TaskSheet(
                     collapsedTopPx = it.positionInRoot().y
                 },
                 state = state,
+                focusName = focusName,
                 onNameBottomInRoot = { nameBottomPx = it },
                 onTitleChange = onTitleChange,
                 onDatePick = onDatePick,
@@ -215,7 +221,7 @@ fun TaskSheet(
                 ) {
                     // Starts three lines tall and keeps growing with its text.
                     NotesField(notes = state.notes, enabled = !state.isSaving, onNotesChange = onNotesChange)
-                    DeleteButton(enabled = !state.isSaving, onClick = onDelete)
+                    if (!state.isNew) DeleteButton(enabled = !state.isSaving, onClick = onDelete)
                 }
             }
             Spacer(modifier = Modifier.height(LayoutConst.SHEET_PADDING_DP.dp))
@@ -227,6 +233,7 @@ fun TaskSheet(
 private fun CollapsedPart(
     modifier: Modifier = Modifier,
     state: TaskSheetState,
+    focusName: Boolean,
     onNameBottomInRoot: (Float) -> Unit,
     onTitleChange: (String) -> Unit,
     onDatePick: (Boundary, LocalDate) -> Unit,
@@ -238,6 +245,9 @@ private fun CollapsedPart(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     var openPicker by rememberSaveable { mutableStateOf<OpenPicker?>(null) }
+    // A new task is typed right away: the name takes focus, which brings up the keyboard.
+    val nameFocus = remember { FocusRequester() }
+    LaunchedEffect(focusName) { if (focusName) nameFocus.requestFocus() }
     Column(
         modifier = modifier.padding(top = LayoutConst.SHEET_TOP_PADDING_DP.dp),
         verticalArrangement = Arrangement.spacedBy(LayoutConst.SHEET_SPACING_DP.dp),
@@ -289,9 +299,9 @@ private fun CollapsedPart(
             }
         }
         NameField(
-            modifier = Modifier.onGloballyPositioned {
-                onNameBottomInRoot(it.positionInRoot().y + it.size.height)
-            },
+            modifier = Modifier
+                .focusRequester(nameFocus)
+                .onGloballyPositioned { onNameBottomInRoot(it.positionInRoot().y + it.size.height) },
             title = state.title,
             enabled = !state.isSaving,
             onTitleChange = onTitleChange,
@@ -642,6 +652,7 @@ private fun SheetPreview(
         TaskSheet(
             state = state,
             expanded = expanded,
+            focusName = false,
             onTitleChange = {},
             onNotesChange = {},
             onDatePick = { _, _ -> },
@@ -662,6 +673,11 @@ private fun TaskSheetPreview() = SheetPreview(previewState)
 @ThemePreviews
 @Composable
 private fun TaskSheetCollapsedPreview() = SheetPreview(previewState, expanded = false)
+
+@ThemePreviews
+@Composable
+private fun TaskSheetNewTaskPreview() =
+    SheetPreview(previewState.copy(title = "", notes = "", isNew = true, canSave = false, colorIndex = 3))
 
 @ThemePreviews
 @Composable

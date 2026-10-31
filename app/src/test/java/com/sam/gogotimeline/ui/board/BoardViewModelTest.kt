@@ -310,6 +310,85 @@ class BoardViewModelTest {
     }
 
     @Test
+    fun newTaskStartsAnUnsavedDraftWithARandomColor() {
+        val viewModel = viewModel()
+        viewModel.onNewTask(later)
+        val draft = viewModel.ready.edit!!.draft
+        assertTrue(draft.isNew)
+        assertEquals(later, draft.schedule)
+        assertTrue(draft.colorIndex in 0 until 7)
+        coVerify(exactly = 0) { taskRepository.createTask(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun untouchedNewTaskJustGoesAway() {
+        val viewModel = viewModel()
+        viewModel.onNewTask(later)
+        viewModel.onEmptyTap()
+        assertNull(viewModel.ready.edit)
+        assertFalse(viewModel.ready.editStatus.confirmingClose)
+    }
+
+    @Test
+    fun savingANewTaskCreatesItAfterTheLastRow() {
+        val created = task(D, 3)
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any()) } coAnswers {
+            tasks.value += created
+            D
+        }
+        val viewModel = viewModel()
+        viewModel.onNewTask(later)
+        val color = viewModel.ready.edit!!.draft.colorIndex
+        viewModel.onTitleChange("  Design review  ")
+        viewModel.onConfirm(TAIPEI)
+        coVerify { taskRepository.createTask(BOARD, "Design review", later, color, "") }
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun newTaskEditingEndsOnlyOnceTheSavedRowArrives() {
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any()) } returns D
+        val viewModel = viewModel()
+        viewModel.onNewTask(later)
+        viewModel.onTitleChange("Design review")
+        viewModel.onConfirm(TAIPEI)
+        assertTrue(viewModel.ready.editStatus.isSaving)
+        tasks.value += task(D, 3)
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun newTaskHasNoDeleteAndItsRowCannotMove() {
+        val viewModel = viewModel()
+        viewModel.onNewTask(later)
+        viewModel.onDeleteRequest()
+        viewModel.onTaskMove(TaskEdit.NEW_TASK_ID, 0)
+        assertFalse(viewModel.ready.editStatus.confirmingDelete)
+        coVerify(exactly = 0) { taskRepository.moveTask(any(), any(), any()) }
+    }
+
+    @Test
+    fun newTaskWaitsWhileAnotherTaskIsEdited() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onNewTask(later)
+        assertEquals(B, viewModel.ready.selectedTaskId)
+    }
+
+    @Test
+    fun failedCreateKeepsTheNewDraft() {
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any()) } throws IllegalStateException("disk")
+        val viewModel = viewModel()
+        viewModel.onNewTask(later)
+        viewModel.onTitleChange("Design review")
+        viewModel.onConfirm(TAIPEI)
+        assertTrue(viewModel.ready.editStatus.saveFailed)
+        assertTrue(viewModel.ready.edit!!.draft.isNew)
+        assertEquals("Design review", viewModel.ready.edit!!.draft.title)
+    }
+
+    @Test
     fun draftSurvivesRecreation() {
         val handle = SavedStateHandle()
         viewModel(handle).editBWithLaterTime()
@@ -490,5 +569,6 @@ class BoardViewModelTest {
         const val A = 10L
         const val B = 11L
         const val C = 12L
+        const val D = 13L
     }
 }

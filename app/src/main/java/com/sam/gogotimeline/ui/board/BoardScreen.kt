@@ -2,8 +2,11 @@ package com.sam.gogotimeline.ui.board
 
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,13 +15,18 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
@@ -46,6 +54,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -59,6 +68,7 @@ import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.SheetTimeEdit
 import com.sam.gogotimeline.core.time.TaskSchedule
+import com.sam.gogotimeline.core.time.TaskTimes
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
@@ -143,6 +153,7 @@ fun BoardScreen(
             isSaving = ready.editStatus.isSaving,
             // A failure from the dialog's Save shows in the dialog instead.
             saveFailed = ready.editStatus.saveFailed && !ready.editStatus.confirmingClose,
+            isNew = edit.draft.isNew,
         )
     }
 
@@ -174,6 +185,17 @@ fun BoardScreen(
         todayDayOfMonth = todayDayOfMonth,
         onGoToToday = { scope.launch { state.animateCenterTo(System.currentTimeMillis().toDouble()) } },
         onZoomChange = viewModel::onZoomChange,
+        // Starts at "now" floored to the current snap and lasts two of the current unit (spec 7.3); an off-screen
+        // bar is scrolled to like a tapped off-screen task.
+        onNewTask = {
+            val unit = state.unit
+            val grid = calendar.grid(settings.snapFor(unit))
+            val range = TaskTimes.newTaskRange(System.currentTimeMillis(), unit, grid, calendar)
+            viewModel.onNewTask(TaskSchedule.from(range, calendar))
+            val visible = state.timeToX(range.end.toDouble()) > 0f &&
+                state.timeToX(range.start.toDouble()) < state.viewportWidthPx
+            if (!visible) scope.launch { state.animateTimeToX(range.start.toDouble(), marginPx) }
+        },
         sheet = sheet,
         onTitleChange = viewModel::onTitleChange,
         onNotesChange = viewModel::onNotesChange,
@@ -244,6 +266,7 @@ fun BoardContent(
     todayDayOfMonth: Int,
     onGoToToday: () -> Unit,
     onZoomChange: (ZoomLevel) -> Unit = {},
+    onNewTask: () -> Unit = {},
     sheet: TaskSheetState? = null,
     onTitleChange: (String) -> Unit = {},
     onNotesChange: (String) -> Unit = {},
@@ -261,6 +284,7 @@ fun BoardContent(
     val keyboard = LocalSoftwareKeyboardController.current
     // The sheet stays hidden until a task is edited; it keeps the last content while it slides away.
     val currentEditing by rememberUpdatedState(sheet != null)
+    val currentIsNew by rememberUpdatedState(sheet?.isNew == true)
     val currentOnCloseEditor by rememberUpdatedState(onCloseEditor)
     val sheetState = rememberStandardBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -295,11 +319,29 @@ fun BoardContent(
                 sheetState.hide()
             }
 
+            // A new task opens expanded (spec 7.3); an existing one collapsed.
             sheetMeasured -> repeat(LayoutConst.SHEET_SHOW_MAX_FRAMES) {
                 if (sheetState.currentValue != SheetValue.Hidden) return@LaunchedEffect
                 withFrameNanos {}
-                sheetState.partialExpand()
+                if (currentIsNew) sheetState.expand() else sheetState.partialExpand()
             }
+        }
+    }
+    // Each time the collapsed sheet appears (editing starts, or back from full screen), the selected row moves to just
+    // above it, whether or not it was covered. The scheduler reaches the screen bottom like the sheet, so the sheet's
+    // top is the body height minus its peek height. Keyboard height changes do not change the sheet's value, so
+    // typing never scrolls.
+    val rowGapPx = with(LocalDensity.current) { LayoutConst.ROW_ABOVE_SHEET_DP.dp.toPx() }
+    val currentSelectedRow by rememberUpdatedState(tasks.indexOfFirst { it.id == selectedTaskId })
+    val currentSheetHeightPx by rememberUpdatedState(sheetHeightPx)
+    LaunchedEffect(sheetState) {
+        var previous = sheetState.currentValue
+        snapshotFlow { sheetState.currentValue }.collect { value ->
+            val row = currentSelectedRow
+            if (value == SheetValue.PartiallyExpanded && previous != value && row >= 0) {
+                state.animateRowAbove(row, state.viewportHeightPx - currentSheetHeightPx, rowGapPx)
+            }
+            previous = value
         }
     }
     // Going from expanded to collapsed always closes the keyboard, whether it was for the name or the notes.
@@ -346,6 +388,7 @@ fun BoardContent(
                     state = it,
                     expanded = sheetState.targetValue == SheetValue.Expanded ||
                         sheetState.currentValue == SheetValue.Expanded,
+                    focusName = sheet?.isNew == true,
                     onTitleChange = onTitleChange,
                     onNotesChange = onNotesChange,
                     onDatePick = onDatePick,
@@ -406,8 +449,31 @@ fun BoardContent(
                 widthMultiplier = settings.widthMultiplier,
                 callbacks = callbacks,
                 onZoomChange = onZoomChange,
+                onNewTask = onNewTask,
                 showEmptyState = interactive,
             )
+            // Hidden while editing so it never covers the sheet (spec 7.3).
+            AnimatedVisibility(
+                visible = interactive && !editing,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(LayoutConst.FAB_MARGIN_DP.dp),
+                enter = fadeIn(tween(LayoutConst.FAB_FADE_MILLIS)),
+                exit = fadeOut(tween(LayoutConst.FAB_FADE_MILLIS)),
+            ) {
+                FloatingActionButton(
+                    onClick = onNewTask,
+                    shape = CircleShape,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_add),
+                        contentDescription = stringResource(R.string.new_task),
+                    )
+                }
+            }
             if (!interactive) {
                 StatusOverlay(isError = isError, onRetry = onRetry)
             }

@@ -79,9 +79,23 @@ class GestureMathTest {
     }
 
     @Test
-    fun clampScrollYToContent() {
-        assertEquals(340f, GestureMath.clampScrollY(500f, 10, ROW, 300f), EPSILON)
-        assertEquals(0f, GestureMath.clampScrollY(-10f, 10, ROW, 300f), EPSILON)
+    fun scrollingStopsWhenTheLastTaskIsTheTopRow() {
+        assertEquals(9 * ROW, GestureMath.clampScrollY(5_000f, 10, ROW), EPSILON)
+        assertEquals(500f, GestureMath.clampScrollY(500f, 10, ROW), EPSILON)
+        assertEquals(0f, GestureMath.clampScrollY(-10f, 10, ROW), EPSILON)
+    }
+
+    @Test
+    fun rowLinesFillTheViewportPastTheTasks() {
+        // 300px tall, rows 64px, not scrolled: lines at 64, 128, 192, 256 whether or not tasks are there.
+        assertEquals(listOf(64f, 128f, 192f, 256f), GestureMath.rowLineYs(0f, ROW, 300f))
+        assertEquals(listOf(44f, 108f, 172f, 236f, 300f), GestureMath.rowLineYs(20f, ROW, 300f))
+    }
+
+    @Test
+    fun rowLinesNeedARowHeight() {
+        assertTrue(GestureMath.rowLineYs(0f, 0f, 300f).isEmpty())
+        assertTrue(GestureMath.rowLineYs(0f, ROW, 0f).isEmpty())
     }
 
     @Test
@@ -114,8 +128,10 @@ class GestureMathTest {
     }
 
     @Test
-    fun fewRowsCannotScroll() {
-        assertEquals(0f, GestureMath.clampScrollY(100f, 3, ROW, 300f), EPSILON)
+    fun fewRowsStillScrollUntilTheLastIsOnTop() {
+        assertEquals(2 * ROW, GestureMath.clampScrollY(1_000f, 3, ROW), EPSILON)
+        assertEquals(0f, GestureMath.clampScrollY(100f, 1, ROW), EPSILON)
+        assertEquals(0f, GestureMath.clampScrollY(100f, 0, ROW), EPSILON)
     }
 
     @Test
@@ -180,6 +196,26 @@ class GestureMathTest {
     fun noRowsPrepareNothing() {
         assertEquals(IntRange.EMPTY, GestureMath.preparedRowRange(IntRange.EMPTY, rowCount = 0))
         assertEquals(IntRange.EMPTY, GestureMath.nextPreparedRows(2..25, IntRange.EMPTY, IntRange.EMPTY))
+    }
+
+    @Test
+    fun selectedRowEndsTheGapAboveTheSheet() {
+        // Rows 64px, sheet top at 500px, 64px gap: row 10's bottom (704px) has to end at 436px, so scroll 268px.
+        assertEquals(268f, GestureMath.rowAboveSheetScrollY(10, ROW, sheetTopPx = 500f, gapPx = ROW))
+    }
+
+    @Test
+    fun rowAlreadyAtTheGapNeedsNoScroll() {
+        // Row 5 ends at 384px = 448px sheet top − 64px gap.
+        assertEquals(0f, GestureMath.rowAboveSheetScrollY(5, ROW, sheetTopPx = 448f, gapPx = ROW))
+    }
+
+    @Test
+    fun topRowsAndAVeryTallSheetLeaveTheLimitsToTheCaller() {
+        // Row 0 would need a negative scroll; the caller clamps it to 0, so the top row stays put.
+        assertEquals(-372f, GestureMath.rowAboveSheetScrollY(0, ROW, sheetTopPx = 500f, gapPx = ROW))
+        // A sheet reaching above the header (huge font) still gives a finite target to clamp.
+        assertEquals(9_999 * ROW + 2 * ROW + 10f, GestureMath.rowAboveSheetScrollY(9_999, ROW, -10f, ROW))
     }
 
     private companion object {

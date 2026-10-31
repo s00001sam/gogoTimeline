@@ -37,12 +37,29 @@ internal fun openingPosition(
     return OpeningPosition(rowIndex = index, time = tasks[index].start, centered = false)
 }
 
-/** The tasks to draw: the database tasks with the draft's title, times, color and notes laid over its task. */
+/**
+ * The tasks to draw: the database tasks with the draft's title, times, color and notes laid over its task. A new
+ * task's draft becomes the last row.
+ */
 internal fun tasksWithDraft(
     tasks: List<Task>,
     draft: TaskEdit?,
 ): List<Task> {
     if (draft == null) return tasks
+    if (draft.isNew) {
+        val row = Task(
+            id = draft.taskId,
+            boardId = tasks.firstOrNull()?.boardId ?: 0L,
+            title = draft.title,
+            schedule = draft.schedule,
+            colorIndex = draft.colorIndex,
+            sortOrder = tasks.size,
+            createdAt = 0L,
+            updatedAt = 0L,
+            notes = draft.notes,
+        )
+        return tasks + row
+    }
     return tasks.map { task ->
         if (task.id != draft.taskId) return@map task
         task.copy(title = draft.title, schedule = draft.schedule, colorIndex = draft.colorIndex, notes = draft.notes)

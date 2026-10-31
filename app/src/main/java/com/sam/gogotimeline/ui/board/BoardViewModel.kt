@@ -3,16 +3,19 @@ package com.sam.gogotimeline.ui.board
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.text.TaskNotes
 import com.sam.gogotimeline.core.text.TaskTitle
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.ZoomLevel
+import com.sam.gogotimeline.data.model.TaskEdit
 import com.sam.gogotimeline.data.repository.BoardRepository
 import com.sam.gogotimeline.data.repository.SettingsRepository
 import com.sam.gogotimeline.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +27,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onStart
@@ -71,6 +75,12 @@ class BoardViewModel @Inject constructor(
         if (edit.value != null) return
         val task = ready?.tasks?.firstOrNull { it.id == taskId } ?: return
         setEdit(EditSession.from(task))
+    }
+
+    /** + or the empty state's New task: a draft with [schedule] and a random color, not saved until ✓. */
+    fun onNewTask(schedule: TaskSchedule) {
+        if (edit.value != null || ready == null) return
+        setEdit(EditSession.newTask(schedule, Random.nextInt(LayoutConst.TASK_COLOR_COUNT)))
     }
 
     fun onEmptyTap() = requestClose()
@@ -138,13 +148,12 @@ class BoardViewModel @Inject constructor(
             try {
                 val draft = session.draft
                 val schedule = (draft.schedule as? TaskSchedule.Timed)?.let { TaskSchedule.from(it.range, calendar) }
-                taskRepository.saveTask(
-                    draft.copy(
-                        title = draft.title.trim(),
-                        notes = TaskNotes.normalize(draft.notes),
-                        schedule = schedule ?: draft.schedule,
-                    ),
+                val toSave = draft.copy(
+                    title = draft.title.trim(),
+                    notes = TaskNotes.normalize(draft.notes),
+                    schedule = schedule ?: draft.schedule,
                 )
+                if (toSave.isNew) createTask(toSave) else taskRepository.saveTask(toSave)
                 endEditing()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -164,9 +173,10 @@ class BoardViewModel @Inject constructor(
         if (!editStatus.value.isBusy) editStatus.value = EditStatus()
     }
 
-    /** The sheet's Delete: asks first. */
+    /** The sheet's Delete: asks first. A new task has no Delete; it is discarded instead. */
     fun onDeleteRequest() {
-        if (edit.value != null && !editStatus.value.isBusy) editStatus.value = EditStatus(confirmingDelete = true)
+        val session = edit.value ?: return
+        if (!session.draft.isNew && !editStatus.value.isBusy) editStatus.value = EditStatus(confirmingDelete = true)
     }
 
     /** Deletes the task; editing ends only when it worked, and the draft is dropped without asking. */
@@ -192,6 +202,8 @@ class BoardViewModel @Inject constructor(
         toIndex: Int,
     ) {
         val boardId = ready?.board?.id ?: return
+        // The new task's row is only a draft; it gets a place in the database when saved.
+        if (taskId == TaskEdit.NEW_TASK_ID) return
         write { taskRepository.moveTask(boardId, taskId, toIndex) }
     }
 
@@ -217,6 +229,16 @@ class BoardViewModel @Inject constructor(
         val session = edit.value ?: return
         if (editStatus.value.isBusy) return
         if (session.isDirty) editStatus.value = EditStatus(confirmingClose = true) else endEditing()
+    }
+
+    /**
+     * Adds the task, then waits until the database list has it, so the draft row is never gone for a frame between
+     * editing ending and the saved row arriving.
+     */
+    private suspend fun createTask(edit: TaskEdit) {
+        val boardId = ready?.board?.id ?: error("No board")
+        val id = taskRepository.createTask(boardId, edit.title, edit.schedule, edit.colorIndex, edit.notes)
+        uiState.first { state -> (state as? BoardUiState.Ready)?.tasks?.any { it.id == id } == true }
     }
 
     private fun endEditing() {

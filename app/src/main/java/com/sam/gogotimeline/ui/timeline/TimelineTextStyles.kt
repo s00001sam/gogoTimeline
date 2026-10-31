@@ -20,6 +20,7 @@ data class TimelineTextStyles(
     val tickBottom: TextStyle,
     val taskName: TextStyle,
     val barText: TextStyle,
+    val snapHint: TextStyle,
 )
 
 @Composable
@@ -47,6 +48,11 @@ fun rememberTimelineTextStyles(): TimelineTextStyles {
                 density,
                 LayoutConst.TEXT_BAR_DP,
                 LayoutConst.TEXT_BAR_LINE_DP,
+            ),
+            snapHint = typography.labelSmall.fixed(
+                density,
+                LayoutConst.TEXT_SNAP_HINT_DP,
+                LayoutConst.TEXT_SNAP_HINT_LINE_DP,
             ),
         )
     }

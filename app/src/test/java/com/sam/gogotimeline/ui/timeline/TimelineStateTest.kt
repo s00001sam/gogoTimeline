@@ -124,10 +124,11 @@ class TimelineStateTest {
     }
 
     @Test
-    fun fewRowsCannotScrollVertically() {
+    fun fewRowsScrollOnlyUntilTheLastIsOnTop() {
         val state = state(rowCount = 2)
         state.scrollBy(0f, -500f)
-        assertEquals(0f, state.scrollY, EPSILON)
+        assertEquals(ROW_PX, state.scrollY, EPSILON)
+        assertEquals(0f, state(rowCount = 1).apply { scrollBy(0f, -500f) }.scrollY, EPSILON)
     }
 
     @Test
@@ -173,11 +174,11 @@ class TimelineStateTest {
     }
 
     @Test
-    fun tallerViewportAfterRotationClampsScroll() {
+    fun fewerRowsAfterADeleteClampScroll() {
         val state = state()
         state.scrollBy(0f, -10_000f)
-        state.updateLayout(DENSITY, AXIS_LEFT_PX, WIDTH_PX, 600f, 10, ROW_PX)
-        assertEquals(680f, state.scrollY, EPSILON)
+        state.updateLayout(DENSITY, AXIS_LEFT_PX, WIDTH_PX, 600f, 4, ROW_PX)
+        assertEquals(3 * ROW_PX, state.scrollY, EPSILON)
     }
 
     @Test
@@ -349,7 +350,9 @@ class TimelineStateTest {
         const val WIDTH_PX = 1_000f
         const val HEIGHT_PX = 300f
         const val ROW_PX = 128f
-        const val MAX_SCROLL_PX = 980f
+
+        // 10 rows of 128px: the 10th (last) row can scroll up to the top, blank rows below it.
+        const val MAX_SCROLL_PX = 9 * ROW_PX
         const val HOUR_MS = 3_600_000.0
         const val EPSILON = 1e-3f
     }

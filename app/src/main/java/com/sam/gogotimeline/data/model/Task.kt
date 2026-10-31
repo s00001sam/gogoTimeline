@@ -15,11 +15,21 @@ data class Task(
     val notes: String = "",
 )
 
-/** What to save for an existing task. Order and timestamps are decided by the repository. */
+/**
+ * What to save for a task; [NEW_TASK_ID] marks one not in the database yet. Order and timestamps are decided by the
+ * repository.
+ */
 data class TaskEdit(
     val taskId: Long,
     val title: String,
     val schedule: TaskSchedule,
     val colorIndex: Int,
     val notes: String = "",
-)
+) {
+    val isNew: Boolean get() = taskId == NEW_TASK_ID
+
+    companion object {
+        // Room ids start at 1, so 0 never belongs to a saved task.
+        const val NEW_TASK_ID = 0L
+    }
+}

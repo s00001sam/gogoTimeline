@@ -43,4 +43,22 @@
     <string name="delete_task_message">This can’t be undone.</string>
     <string name="delete">Delete</string>
     <string name="delete_failed">Couldn’t delete task. Please try again.</string>
+    <string name="snap_hint_interval">Current snap interval: %1$s</string>
+    <string name="snap_hint_resize">Resizing will snap your times.</string>
+    <plurals name="snap_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="snap_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="snap_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="snap_weeks">
+        <item quantity="one">%d week</item>
+        <item quantity="other">%d weeks</item>
+    </plurals>
 </resources>

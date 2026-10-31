@@ -196,6 +196,23 @@ class TimelineState(
         return TimeLimits.clamp(axis.timeAt(axis.position(target) - offset))
     }
 
+    /**
+     * Smoothly scrolls so row [rowIndex]'s bottom sits [gapPx] above [sheetTopPx] (body px), stopping at the scroll
+     * limits.
+     */
+    suspend fun animateRowAbove(
+        rowIndex: Int,
+        sheetTopPx: Float,
+        gapPx: Float,
+    ) {
+        val to = clampScrollY(GestureMath.rowAboveSheetScrollY(rowIndex, rowHeightPx, sheetTopPx, gapPx))
+        mutatorMutex.mutate {
+            animate(scrollY, to, animationSpec = tween(LayoutConst.ZOOM_ANIMATION_MILLIS)) { value, _ ->
+                scrollY = value
+            }
+        }
+    }
+
     /** Called on touch-down: cancels a running fling or zoom animation. */
     suspend fun stopAnimation() {
         mutatorMutex.mutate(MutatePriority.UserInput) {}
@@ -223,8 +240,7 @@ class TimelineState(
         scrollY = clampScrollY(scrollY)
     }
 
-    private fun clampScrollY(value: Float): Float =
-        GestureMath.clampScrollY(value, rowCount, rowHeightPx, viewportHeightPx)
+    private fun clampScrollY(value: Float): Float = GestureMath.clampScrollY(value, rowCount, rowHeightPx)
 
     private suspend fun decay(
         velocity: Float,

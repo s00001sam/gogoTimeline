@@ -64,12 +64,38 @@ object GestureMath {
         }
     }
 
+    /**
+     * Blank rows always follow the tasks, like a spreadsheet, so scrolling goes on until the last task is the top row;
+     * the bottom task can then always scroll above the sheet.
+     */
     fun clampScrollY(
         scrollY: Float,
         rowCount: Int,
         rowHeightPx: Float,
+    ): Float = scrollY.coerceIn(0f, ((rowCount - 1) * rowHeightPx).coerceAtLeast(0f))
+
+    /** Row boundary lines across the viewport, blank rows included: the y of each, in body px. */
+    fun rowLineYs(
+        scrollY: Float,
+        rowHeightPx: Float,
         viewportHeightPx: Float,
-    ): Float = scrollY.coerceIn(0f, (rowCount * rowHeightPx - viewportHeightPx).coerceAtLeast(0f))
+    ): List<Float> {
+        if (rowHeightPx <= 0f) return emptyList()
+        val first = floor(scrollY / rowHeightPx).toInt() + 1
+        val last = floor((scrollY + viewportHeightPx) / rowHeightPx).toInt()
+        return (first..last).map { it * rowHeightPx - scrollY }
+    }
+
+    /**
+     * The scroll that puts row [rowIndex]'s bottom [gapPx] above [sheetTopPx] (body px, the collapsed sheet's top edge);
+     * the caller clamps it to the limits.
+     */
+    fun rowAboveSheetScrollY(
+        rowIndex: Int,
+        rowHeightPx: Float,
+        sheetTopPx: Float,
+        gapPx: Float,
+    ): Float = (rowIndex + 1) * rowHeightPx + gapPx - sheetTopPx
 
     /** Visible rows plus [buffer] rows above and below. */
     fun visibleRowRange(

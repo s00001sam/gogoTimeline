@@ -8,6 +8,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.unit.dp
 import com.sam.gogotimeline.core.LayoutConst
+import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.TimeScale
 import com.sam.gogotimeline.core.time.TimelineTicks
 
@@ -21,6 +22,18 @@ internal fun DrawScope.drawGridLines(
     val strokeWidth = LayoutConst.GRID_LINE_WIDTH_DP.dp.toPx()
     ticks.bottom.forEach { drawVerticalLine(scale.timeToX(it.time), minorColor, strokeWidth) }
     ticks.top.forEach { drawVerticalLine(scale.timeToX(it.time), majorColor, strokeWidth) }
+}
+
+/** A line under every row, blank rows below the tasks included, like a spreadsheet. */
+internal fun DrawScope.drawRowLines(
+    scrollY: Float,
+    rowPx: Float,
+    color: Color,
+) {
+    val strokeWidth = LayoutConst.GRID_LINE_WIDTH_DP.dp.toPx()
+    GestureMath.rowLineYs(scrollY, rowPx, size.height).forEach { y ->
+        drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth)
+    }
 }
 
 /**

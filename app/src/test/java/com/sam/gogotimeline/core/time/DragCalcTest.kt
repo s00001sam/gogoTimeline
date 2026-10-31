@@ -1,6 +1,8 @@
 package com.sam.gogotimeline.core.time
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DragCalcTest {
@@ -104,6 +106,65 @@ class DragCalcTest {
         val task = TimeRange(NEW_YORK.at("2026-03-08T00:00"), NEW_YORK.at("2026-03-08T01:00"))
         val result = DragCalc.resizeEnd(task, minutes(60), NEW_YORK.grid(SnapInterval(60)))
         assertRange("2026-03-08T00:00", "2026-03-08T03:00", result, NEW_YORK)
+    }
+
+    @Test
+    fun timesOnTheGridFitIt() {
+        assertTrue(DragCalc.fitsGrid(range("09:00", "11:00"), hourGrid))
+        assertFalse(DragCalc.fitsGrid(range("09:10", "11:00"), hourGrid))
+        assertFalse(DragCalc.fitsGrid(range("09:00", "10:40"), hourGrid))
+    }
+
+    @Test
+    fun exactlyOneIntervalStillFits() {
+        assertTrue(DragCalc.fitsGrid(range("09:00", "10:00"), hourGrid))
+        assertFalse(DragCalc.fitsGrid(range("09:00", "09:30"), hourGrid))
+        assertFalse(DragCalc.fitsGrid(range("00:00", "12:00"), dayGrid))
+    }
+
+    @Test
+    fun aShortDstDayStillCountsAsOneDay() {
+        // 2026-03-08 in New York has 23 hours; it is still one full day on a 1-day grid.
+        val day = TimeRange(NEW_YORK.at("2026-03-08T00:00"), NEW_YORK.at("2026-03-09T00:00"))
+        assertTrue(DragCalc.fitsGrid(day, NEW_YORK.grid(SnapInterval(SnapInterval.DAY_MINUTES))))
+    }
+
+    @Test
+    fun resizingOnAShortDstDayStopsAtOneDay() {
+        // 2026-03-08 in New York has 23 hours; with a 1-day snap both ends can still shrink to exactly that day.
+        val nyDay = NEW_YORK.grid(SnapInterval(SnapInterval.DAY_MINUTES))
+        val task = TimeRange(NEW_YORK.at("2026-03-08T00:00"), NEW_YORK.at("2026-03-10T00:00"))
+        assertRange("2026-03-08T00:00", "2026-03-09T00:00", DragCalc.resizeEnd(task, minutes(-3_000), nyDay), NEW_YORK)
+        val earlier = TimeRange(NEW_YORK.at("2026-03-07T00:00"), NEW_YORK.at("2026-03-09T00:00"))
+        assertRange(
+            "2026-03-08T00:00",
+            "2026-03-09T00:00",
+            DragCalc.resizeStart(earlier, minutes(3_000), nyDay),
+            NEW_YORK,
+        )
+    }
+
+    @Test
+    fun resizingOnALongDstDayStopsAtOneDay() {
+        // 2026-11-01 in New York has 25 hours.
+        val nyDay = NEW_YORK.grid(SnapInterval(SnapInterval.DAY_MINUTES))
+        val task = TimeRange(NEW_YORK.at("2026-11-01T00:00"), NEW_YORK.at("2026-11-03T00:00"))
+        assertRange("2026-11-01T00:00", "2026-11-02T00:00", DragCalc.resizeEnd(task, minutes(-3_000), nyDay), NEW_YORK)
+    }
+
+    @Test
+    fun offGridStartStillKeepsAtLeastOneInterval() {
+        // 09:10 start, 1-hour snap: the end stops at 11:00, the first line a full hour after the start's next line.
+        assertRange(
+            "2026-10-30T09:10",
+            "2026-10-30T11:00",
+            DragCalc.resizeEnd(range("09:10", "13:00"), minutes(-500), hourGrid),
+        )
+        assertRange(
+            "2026-10-30T10:00",
+            "2026-10-30T11:50",
+            DragCalc.resizeStart(range("08:00", "11:50"), minutes(500), hourGrid),
+        )
     }
 
     @Test

@@ -22,28 +22,39 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.TimeConst
 import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
+import com.sam.gogotimeline.core.time.DragCalc
 import com.sam.gogotimeline.core.time.SnapInterval
 import com.sam.gogotimeline.core.time.TaskTimeFormat
 import com.sam.gogotimeline.core.time.TimeRange
@@ -52,6 +63,8 @@ import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
 import com.sam.gogotimeline.ui.theme.GogoTimelineTheme
+import com.sam.gogotimeline.ui.theme.SnapHintBackground
+import com.sam.gogotimeline.ui.theme.SnapHintText
 import com.sam.gogotimeline.ui.timeline.preview.FakeTimelineData
 import java.time.DayOfWeek
 import java.time.LocalDateTime
@@ -66,7 +79,7 @@ import kotlinx.coroutines.flow.collectLatest
  * [callbacks], and the owner passes the updated tasks back in.
  *
  * Z-order, bottom to top: grid → bars → "now" line → left pane background → left pane rows → header →
- * corner → drag time label → empty state. A dragged row is drawn last within its layer.
+ * corner → drag time label → snap hint → empty state. A dragged row is drawn last within its layer.
  */
 @Composable
 fun TimelineScheduler(
@@ -175,6 +188,7 @@ fun TimelineScheduler(
         task.copy(start = range.start, end = range.end)
     }
     val rowPx = with(localDensity) { rowHeight.toPx() }
+    val snapHintText = snapHintText(interaction.grid().interval)
 
     Layout(
         modifier = modifier
@@ -187,11 +201,7 @@ fun TimelineScheduler(
                     val scale = state.scale()
                     val ticks = tickCache.ticks(scale.visibleTimeRange(), state.unit, state.dpPerUnit, state.calendar)
                     drawGridLines(ticks, scale, extendedColors.gridMinor, extendedColors.gridMajor)
-                    val stroke = LayoutConst.GRID_LINE_WIDTH_DP.dp.toPx()
-                    visibleRows.forEach { index ->
-                        val y = (index + 1) * rowPx - state.scrollY
-                        drawLine(extendedColors.gridMinor, Offset(0f, y), Offset(size.width, y), stroke)
-                    }
+                    drawRowLines(state.scrollY, rowPx, extendedColors.gridMinor)
                 }
             },
             {
@@ -199,7 +209,9 @@ fun TimelineScheduler(
                     val task = shownTasks.getValue(index)
                     key(task.id) {
                         ScheduledBar(
-                            modifier = Modifier.layoutId(index),
+                            modifier = Modifier
+                                .layoutId(index)
+                                .dimmedWhileEditing(selectedTaskId, task.id),
                             task = task,
                             index = index,
                             selected = task.id == selectedTaskId,
@@ -222,13 +234,15 @@ fun TimelineScheduler(
                     drawNowLine(state.timeToX(now.value.toDouble()), extendedColors.nowLine)
                 }
             },
-            { LeftPaneBackground() },
+            { LeftPaneBackground(scrollY = { state.scrollY }, rowPx = rowPx) },
             {
                 rowIndices.forEach { index ->
                     val task = shownTasks.getValue(index)
                     key(task.id) {
                         ScheduledName(
-                            modifier = Modifier.layoutId(index),
+                            modifier = Modifier
+                                .layoutId(index)
+                                .dimmedWhileEditing(selectedTaskId, task.id),
                             title = task.title,
                             index = index,
                             selected = task.id == selectedTaskId,
@@ -284,6 +298,25 @@ fun TimelineScheduler(
                     drawText(layout, topLeft = Offset(left + paddingX, top + paddingY))
                 }
             },
+            {
+                Canvas(Modifier.clipToBounds()) {
+                    // Hidden while dragging, where the live time label takes its place.
+                    if (interaction.drag != null) return@Canvas
+                    val index = rowTasks.indexOfFirst { it.id == selectedTaskId }
+                    if (index < 0) return@Canvas
+                    val range = interaction.displayRange(rowTasks[index])
+                    if (DragCalc.fitsGrid(range, interaction.grid())) return@Canvas
+                    drawSnapHint(
+                        text = snapHintText,
+                        barLeft = state.timeToX(range.start.toDouble()),
+                        barRight = state.timeToX(range.end.toDouble()),
+                        barTop = index * rowPx - state.scrollY + LayoutConst.BAR_VERTICAL_PADDING_DP.dp.toPx(),
+                        barHeight = rowPx - 2 * LayoutConst.BAR_VERTICAL_PADDING_DP.dp.toPx(),
+                        textMeasurer = textMeasurer,
+                        style = styles.snapHint,
+                    )
+                }
+            },
             { if (showEmptyState && tasks.isEmpty()) EmptyState(onNewTask = onNewTask) },
         ),
     ) { measurables, constraints ->
@@ -320,7 +353,8 @@ fun TimelineScheduler(
         val header = measurables[5].first().measure(Constraints.fixed(axisWidth, top))
         val corner = measurables[6].first().measure(Constraints.fixed(left, top))
         val dragLabel = measurables[7].first().measure(bodyConstraints)
-        val empty = measurables[8].firstOrNull()?.measure(Constraints(maxWidth = axisWidth, maxHeight = bodyHeight))
+        val snapHint = measurables[8].first().measure(bodyConstraints)
+        val empty = measurables[9].firstOrNull()?.measure(Constraints(maxWidth = axisWidth, maxHeight = bodyHeight))
 
         layout(width, height) {
             fun rowTop(index: Int): Float = top + index * rowPx - state.scrollY
@@ -335,6 +369,7 @@ fun TimelineScheduler(
             header.place(left, 0)
             corner.place(0, 0)
             dragLabel.place(left, top)
+            snapHint.place(left, top)
             empty?.place(left + (axisWidth - empty.width) / 2, top + (bodyHeight - empty.height) / 2)
         }
     }
@@ -449,6 +484,68 @@ private fun rowOffsetPx(
         else -> shift.value
     }
 }
+
+/** While a task is edited, every other row (bar, time label and left-pane cell) fades back. */
+private fun Modifier.dimmedWhileEditing(
+    selectedTaskId: Long?,
+    taskId: Long,
+): Modifier = if (selectedTaskId != null && selectedTaskId != taskId) alpha(LayoutConst.EDIT_DIM_ALPHA) else this
+
+/** `Current snap interval: 1 day` in bold, then what resizing does. */
+@Composable
+private fun snapHintText(interval: SnapInterval): AnnotatedString {
+    val minutes = interval.minutes
+    val (pluralRes, count) = when {
+        minutes % SnapInterval.WEEK_MINUTES == 0 -> R.plurals.snap_weeks to minutes / SnapInterval.WEEK_MINUTES
+        minutes % SnapInterval.DAY_MINUTES == 0 -> R.plurals.snap_days to minutes / SnapInterval.DAY_MINUTES
+        minutes % MINUTES_PER_HOUR == 0 -> R.plurals.snap_hours to minutes / MINUTES_PER_HOUR
+        else -> R.plurals.snap_minutes to minutes
+    }
+    val intervalLine = stringResource(R.string.snap_hint_interval, pluralStringResource(pluralRes, count, count))
+    val resizeLine = stringResource(R.string.snap_hint_resize)
+    return buildAnnotatedString {
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(intervalLine) }
+        append("\n")
+        append(resizeLine)
+    }
+}
+
+/**
+ * The snap hint above the selected bar (below it when there is no room above), aligned with the bar's left edge and
+ * kept inside the time axis. Not drawn when the bar is off screen.
+ */
+private fun DrawScope.drawSnapHint(
+    text: AnnotatedString,
+    barLeft: Float,
+    barRight: Float,
+    barTop: Float,
+    barHeight: Float,
+    textMeasurer: TextMeasurer,
+    style: TextStyle,
+) {
+    if (barRight <= 0f || barLeft >= size.width || barTop + barHeight <= 0f || barTop >= size.height) return
+    val paddingX = LayoutConst.SNAP_HINT_PADDING_HORIZONTAL_DP.dp.toPx()
+    val paddingY = LayoutConst.SNAP_HINT_PADDING_VERTICAL_DP.dp.toPx()
+    val gap = LayoutConst.SNAP_HINT_GAP_DP.dp.toPx()
+    val layout = textMeasurer.measure(
+        text = text,
+        style = style.copy(color = SnapHintText),
+        constraints = Constraints(maxWidth = (size.width - 2 * paddingX).roundToInt().coerceAtLeast(0)),
+    )
+    val hintSize = Size(layout.size.width + 2 * paddingX, layout.size.height + 2 * paddingY)
+    val above = barTop - gap - hintSize.height
+    val top = if (above >= 0f) above else barTop + barHeight + gap
+    val left = barLeft.coerceIn(0f, (size.width - hintSize.width).coerceAtLeast(0f))
+    drawRoundRect(
+        color = SnapHintBackground,
+        topLeft = Offset(left, top),
+        size = hintSize,
+        cornerRadius = CornerRadius(LayoutConst.SNAP_HINT_CORNER_DP.dp.toPx()),
+    )
+    drawText(layout, topLeft = Offset(left + paddingX, top + paddingY))
+}
+
+private const val MINUTES_PER_HOUR = 60
 
 /** Lifts a long-pressed row: scales up a little with a shadow, so it reads as picked up even without haptics. */
 @Composable

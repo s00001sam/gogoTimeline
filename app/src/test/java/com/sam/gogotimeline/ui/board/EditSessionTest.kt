@@ -40,6 +40,30 @@ class EditSessionTest {
     }.let { EditSession.restore(it) }
 
     @Test
+    fun newTaskStartsEmptyAndUnchanged() {
+        val session = EditSession.newTask(kickoff, colorIndex = 4)
+        assertTrue(session.draft.isNew)
+        assertEquals("", session.draft.title)
+        assertFalse(session.isDirty)
+        assertFalse(session.isValid)
+    }
+
+    @Test
+    fun newTaskWithANameIsDirtyAndValid() {
+        val session = EditSession.newTask(kickoff, colorIndex = 4).withTitle("Design review")
+        assertTrue(session.isDirty)
+        assertTrue(session.isValid)
+    }
+
+    @Test
+    fun newTaskDraftSurvivesProcessDeath() {
+        val session = EditSession.newTask(kickoff, colorIndex = 6).withTitle("Design review")
+        val restored = session.roundTrip()!!
+        assertTrue(restored.draft.isNew)
+        assertEquals(session, restored)
+    }
+
+    @Test
     fun freshSessionIsNotDirty() {
         assertFalse(EditSession.from(task()).isDirty)
     }

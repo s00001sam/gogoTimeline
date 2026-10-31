@@ -186,6 +186,22 @@ object LayoutConst {
     const val TEXT_TASK_NAME_LINE_DP = 18f
     const val TEXT_BAR_DP = 13f
     const val TEXT_BAR_LINE_DP = 16f
+    const val TEXT_SNAP_HINT_DP = 12f
+    const val TEXT_SNAP_HINT_LINE_DP = 16f
+
+    // Snap hint above the edited bar.
+    const val SNAP_HINT_GAP_DP = 8f
+    const val SNAP_HINT_CORNER_DP = 6f
+    const val SNAP_HINT_PADDING_HORIZONTAL_DP = 8f
+    const val SNAP_HINT_PADDING_VERTICAL_DP = 6f
+
+    // While editing, other rows fade back, and the selected row scrolls so its bottom is this far above the sheet.
+    const val EDIT_DIM_ALPHA = 0.4f
+    const val ROW_ABOVE_SHEET_DP = 64f
+
+    // + button
+    const val FAB_MARGIN_DP = 16f
+    const val FAB_FADE_MILLIS = 200
 
     // "Go to today" button: today's day of month inside a small rounded box.
     const val TODAY_BOX_SIZE_DP = 22f
@@ -210,6 +226,9 @@ object LayoutConst {
     const val LONG_PRESS_SHORTEN_MILLIS = 100L
     const val LONG_PRESS_MIN_MILLIS = 300L
     const val LONG_PRESS_TIMEOUT_MILLIS = 400L
+
+    // The seven task colors (ui/theme/Color.kt); a new task picks one at random.
+    const val TASK_COLOR_COUNT = 7
 
     // Names
     const val NAME_MAX_LENGTH = 40

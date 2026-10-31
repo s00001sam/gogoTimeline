@@ -93,6 +93,15 @@ data class EditSession(
             return EditSession(original = edit, draft = edit)
         }
 
+        /** A task not in the database yet, with an empty name; unchanged it counts as not dirty and just goes away. */
+        fun newTask(
+            schedule: TaskSchedule,
+            colorIndex: Int,
+        ): EditSession {
+            val edit = TaskEdit(TaskEdit.NEW_TASK_ID, title = "", schedule = schedule, colorIndex = colorIndex)
+            return EditSession(original = edit, draft = edit)
+        }
+
         fun restore(handle: SavedStateHandle): EditSession? {
             val original = handle.get<LongArray>(KEY_ORIGINAL) ?: return null
             val draft = handle.get<LongArray>(KEY_DRAFT) ?: return null

@@ -82,14 +82,22 @@ internal fun LeftPaneCorner(
     }
 }
 
-/** Full-height background of the left pane, so bars and grid lines never show through below the last row. */
+/**
+ * Full-height background of the left pane, so bars never show through below the last row. It carries the row lines
+ * for the blank rows too; [scrollY] is read only while drawing, so scrolling just redraws.
+ */
 @Composable
-internal fun LeftPaneBackground(modifier: Modifier = Modifier) {
+internal fun LeftPaneBackground(
+    modifier: Modifier = Modifier,
+    scrollY: () -> Float,
+    rowPx: Float,
+) {
     val dividerColor = GogoTimelineTheme.extendedColors.gridMinor
     Box(
         modifier = modifier
             .background(MaterialTheme.colorScheme.surface)
             .drawBehind {
+                drawRowLines(scrollY(), rowPx, dividerColor)
                 val stroke = LayoutConst.GRID_LINE_WIDTH_DP.dp.toPx()
                 drawLine(dividerColor, Offset(size.width, 0f), Offset(size.width, size.height), stroke)
             },
@@ -117,9 +125,14 @@ internal fun LeftPaneRow(
             .padding(horizontal = LayoutConst.LEFT_PANE_PADDING_DP.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
+        // A new task's empty name shows the same gray placeholder as the sheet's name field.
         Text(
-            text = title,
-            color = if (selected) colorScheme.onSecondaryContainer else colorScheme.onSurface,
+            text = title.ifEmpty { stringResource(R.string.task_name) },
+            color = when {
+                title.isEmpty() -> colorScheme.onSurfaceVariant
+                selected -> colorScheme.onSecondaryContainer
+                else -> colorScheme.onSurface
+            },
             style = styles.taskName,
             maxLines = LayoutConst.NAME_MAX_LINES,
             overflow = TextOverflow.Ellipsis,

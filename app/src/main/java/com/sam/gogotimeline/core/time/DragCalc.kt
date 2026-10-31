@@ -17,24 +17,38 @@ object DragCalc {
         return TimeLimits.clampRange(TimeRange(start, start + original.duration))
     }
 
-    /** The start can go no later than (end − one interval), floored to the grid. */
+    /**
+     * The start can go no later than one grid line before the end's line. Counted in grid lines, not elapsed time,
+     * so on a 23- or 25-hour DST day the shortest result is still exactly one day.
+     */
     fun resizeStart(
         original: TimeRange,
         deltaMs: Double,
         grid: TimeGrid,
     ): TimeRange {
-        val latest = grid.floor(original.end - grid.interval.millis)
+        val latest = grid.floor(grid.floor(original.end) - 1)
         val start = grid.nearest((original.start + deltaMs).roundToLong()).coerceAtMost(latest)
         return original.copy(start = TimeLimits.clamp(start))
     }
 
-    /** The end can go no earlier than (start + one interval), ceiled to the grid. */
+    /**
+     * Whether resizing keeps the times as they are: both ends on the grid and at least one grid step long. The step is
+     * "the next grid line after the start", so a 23-hour DST day still counts as one day. Otherwise the snap hint shows.
+     */
+    fun fitsGrid(
+        range: TimeRange,
+        grid: TimeGrid,
+    ): Boolean = grid.isOnGrid(range.start) &&
+        grid.isOnGrid(range.end) &&
+        grid.ceil(range.start + 1) <= range.end
+
+    /** The end can go no earlier than one grid line after the start's line; counted in lines like [resizeStart]. */
     fun resizeEnd(
         original: TimeRange,
         deltaMs: Double,
         grid: TimeGrid,
     ): TimeRange {
-        val earliest = grid.ceil(original.start + grid.interval.millis)
+        val earliest = grid.ceil(grid.ceil(original.start) + 1)
         val end = grid.nearest((original.end + deltaMs).roundToLong()).coerceAtLeast(earliest)
         return original.copy(end = TimeLimits.clamp(end))
     }

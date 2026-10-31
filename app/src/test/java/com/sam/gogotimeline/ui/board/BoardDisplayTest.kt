@@ -101,4 +101,20 @@ class BoardDisplayTest {
     fun draftOfAMissingTaskKeepsTheTasks() {
         assertEquals(domainTasks, tasksWithDraft(domainTasks, TaskEdit(99, "Gone", later, 0)))
     }
+
+    @Test
+    fun newTaskDraftIsTheLastRow() {
+        val shown = tasksWithDraft(domainTasks, TaskEdit(TaskEdit.NEW_TASK_ID, "", later, colorIndex = 2))
+        assertEquals(listOf(1L, 2L, 3L, TaskEdit.NEW_TASK_ID), shown.map { it.id })
+        assertEquals(3, shown.last().sortOrder)
+        assertEquals(later, shown.last().schedule)
+        assertEquals(domainTasks, shown.dropLast(1))
+    }
+
+    @Test
+    fun newTaskOnAnEmptyBoardIsTheOnlyRow() {
+        val shown = tasksWithDraft(emptyList(), TaskEdit(TaskEdit.NEW_TASK_ID, "", later, colorIndex = 2))
+        assertEquals(listOf(TaskEdit.NEW_TASK_ID), shown.map { it.id })
+        assertEquals(0, shown.single().sortOrder)
+    }
 }

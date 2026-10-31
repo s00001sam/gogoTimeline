@@ -85,3 +85,7 @@ val TaskColorsDark = listOf(
 // 80% opaque backing behind the time text inside bars, so the primary text color reads on any task color.
 val BarLabelBackgroundLight = Color(0xCCFFFFFF)
 val BarLabelBackgroundDark = Color(0xCC2A2A2A)
+
+// Snap hint over the scheduler: the same dark translucent box with white text in light and dark mode.
+val SnapHintBackground = Color(0xE6202124)
+val SnapHintText = Color(0xFFFFFFFF)
