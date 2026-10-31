@@ -38,4 +38,9 @@
     <string name="next_hour">Next hour</string>
     <string name="previous_minutes">Previous minutes</string>
     <string name="next_minutes">Next minutes</string>
+    <string name="delete_task">Delete task</string>
+    <string name="delete_task_title">Delete “%1$s”?</string>
+    <string name="delete_task_message">This can’t be undone.</string>
+    <string name="delete">Delete</string>
+    <string name="delete_failed">Couldn’t delete task. Please try again.</string>
 </resources>

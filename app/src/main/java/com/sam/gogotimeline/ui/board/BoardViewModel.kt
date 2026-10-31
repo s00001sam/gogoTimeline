@@ -82,30 +82,29 @@ class BoardViewModel @Inject constructor(
         schedule: TaskSchedule,
     ) {
         val session = edit.value ?: return
-        // Nothing may change the draft while it is being saved.
-        if (editStatus.value.isSaving || session.draft.taskId != taskId) return
+        if (editStatus.value.isBusy || session.draft.taskId != taskId) return
         setEdit(session.withSchedule(schedule))
     }
 
     fun onTitleChange(title: String) {
         val session = edit.value ?: return
-        if (!editStatus.value.isSaving) setEdit(session.withTitle(TaskTitle.clean(title)))
+        if (!editStatus.value.isBusy) setEdit(session.withTitle(TaskTitle.clean(title)))
     }
 
     fun onNotesChange(notes: String) {
         val session = edit.value ?: return
-        if (!editStatus.value.isSaving) setEdit(session.withNotes(TaskNotes.limit(notes)))
+        if (!editStatus.value.isBusy) setEdit(session.withNotes(TaskNotes.limit(notes)))
     }
 
     fun onColorChange(colorIndex: Int) {
         val session = edit.value ?: return
-        if (!editStatus.value.isSaving) setEdit(session.withColor(colorIndex))
+        if (!editStatus.value.isBusy) setEdit(session.withColor(colorIndex))
     }
 
     /** A date or time picked in the sheet; it may be invalid and then blocks saving. */
     fun onSheetScheduleChange(schedule: TaskSchedule) {
         val session = edit.value ?: return
-        if (!editStatus.value.isSaving) setEdit(session.withSheetSchedule(schedule))
+        if (!editStatus.value.isBusy) setEdit(session.withSheetSchedule(schedule))
     }
 
     fun onAllDayChange(
@@ -113,7 +112,7 @@ class BoardViewModel @Inject constructor(
         calendar: CalendarContext,
     ) {
         val session = edit.value ?: return
-        if (!editStatus.value.isSaving) setEdit(session.withAllDay(checked, calendar))
+        if (!editStatus.value.isBusy) setEdit(session.withAllDay(checked, calendar))
     }
 
     /** ✓: nothing to save just ends editing; otherwise saves. */
@@ -122,7 +121,7 @@ class BoardViewModel @Inject constructor(
         if (!session.isValid) return
         if (session.isDirty) {
             onSave(calendar)
-        } else if (!editStatus.value.isSaving) {
+        } else if (!editStatus.value.isBusy) {
             endEditing()
         }
     }
@@ -133,7 +132,7 @@ class BoardViewModel @Inject constructor(
      */
     fun onSave(calendar: CalendarContext) {
         val session = edit.value ?: return
-        if (editStatus.value.isSaving || !session.isValid) return
+        if (editStatus.value.isBusy || !session.isValid) return
         editStatus.update { it.copy(isSaving = true, saveFailed = false) }
         viewModelScope.launch {
             try {
@@ -157,12 +156,35 @@ class BoardViewModel @Inject constructor(
     }
 
     fun onDiscard() {
-        if (!editStatus.value.isSaving) endEditing()
+        if (!editStatus.value.isBusy) endEditing()
     }
 
-    /** Closes the dialog and goes back to editing with the draft kept. */
-    fun onCancelClose() {
-        if (!editStatus.value.isSaving) editStatus.value = EditStatus()
+    /** Closes the Save / Discard or Delete dialog and goes back to editing with the draft kept. */
+    fun onCancelDialog() {
+        if (!editStatus.value.isBusy) editStatus.value = EditStatus()
+    }
+
+    /** The sheet's Delete: asks first. */
+    fun onDeleteRequest() {
+        if (edit.value != null && !editStatus.value.isBusy) editStatus.value = EditStatus(confirmingDelete = true)
+    }
+
+    /** Deletes the task; editing ends only when it worked, and the draft is dropped without asking. */
+    fun onDeleteConfirm() {
+        val session = edit.value ?: return
+        val boardId = ready?.board?.id ?: return
+        if (editStatus.value.isBusy) return
+        editStatus.update { it.copy(isDeleting = true, deleteFailed = false) }
+        viewModelScope.launch {
+            try {
+                taskRepository.deleteTask(boardId, session.draft.taskId)
+                endEditing()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                editStatus.update { it.copy(isDeleting = false, deleteFailed = true) }
+            }
+        }
     }
 
     fun onTaskMove(
@@ -193,7 +215,7 @@ class BoardViewModel @Inject constructor(
     /** Ends editing right away when nothing changed; otherwise asks Save / Discard. */
     private fun requestClose() {
         val session = edit.value ?: return
-        if (editStatus.value.isSaving) return
+        if (editStatus.value.isBusy) return
         if (session.isDirty) editStatus.value = EditStatus(confirmingClose = true) else endEditing()
     }
 

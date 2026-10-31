@@ -200,16 +200,27 @@ fun BoardScreen(
         onColorChange = viewModel::onColorChange,
         onCloseEditor = viewModel::onBack,
         onConfirmEdit = { viewModel.onConfirm(calendar) },
+        onDeleteTask = viewModel::onDeleteRequest,
     )
-    val editStatus = ready?.editStatus
-    if (editStatus?.confirmingClose == true) {
+    val edit = ready?.edit ?: return
+    val editStatus = ready.editStatus
+    if (editStatus.confirmingClose) {
         SaveChangesDialog(
             canSave = ready.canSave,
             isSaving = editStatus.isSaving,
             saveFailed = editStatus.saveFailed,
             onSave = { viewModel.onSave(calendar) },
             onDiscard = viewModel::onDiscard,
-            onCancel = viewModel::onCancelClose,
+            onCancel = viewModel::onCancelDialog,
+        )
+    }
+    if (editStatus.confirmingDelete) {
+        DeleteTaskDialog(
+            taskName = edit.original.title,
+            isDeleting = editStatus.isDeleting,
+            deleteFailed = editStatus.deleteFailed,
+            onDelete = viewModel::onDeleteConfirm,
+            onCancel = viewModel::onCancelDialog,
         )
     }
 }
@@ -242,6 +253,7 @@ fun BoardContent(
     onColorChange: (Int) -> Unit = {},
     onCloseEditor: () -> Unit = {},
     onConfirmEdit: () -> Unit = {},
+    onDeleteTask: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val interactive = !isLoading && !isError
@@ -342,6 +354,7 @@ fun BoardContent(
                     onColorChange = onColorChange,
                     onClose = onCloseEditor,
                     onConfirm = onConfirmEdit,
+                    onDelete = onDeleteTask,
                     onCollapsedHeightChange = { sheetHeightPx = it },
                 )
             }

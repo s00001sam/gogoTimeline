@@ -20,13 +20,19 @@ sealed interface BoardUiState {
         val selectedTaskId: Long? get() = edit?.draft?.taskId
 
         /** ✓ and the dialog's Save: a valid name and times, and not already saving. */
-        val canSave: Boolean get() = edit?.isValid == true && !editStatus.isSaving
+        val canSave: Boolean get() = edit?.isValid == true && !editStatus.isBusy
     }
 }
 
-/** The Save / Discard dialog and saving progress for the current edit. */
+/** The Save / Discard and Delete dialogs and their progress for the current edit. */
 data class EditStatus(
     val confirmingClose: Boolean = false,
     val isSaving: Boolean = false,
     val saveFailed: Boolean = false,
-)
+    val confirmingDelete: Boolean = false,
+    val isDeleting: Boolean = false,
+    val deleteFailed: Boolean = false,
+) {
+    /** While saving or deleting, nothing may change the draft or close the editor. */
+    val isBusy: Boolean get() = isSaving || isDeleting
+}

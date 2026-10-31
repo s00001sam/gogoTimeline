@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -39,9 +40,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -141,6 +144,7 @@ fun TaskSheet(
     onColorChange: (Int) -> Unit,
     onClose: () -> Unit,
     onConfirm: () -> Unit,
+    onDelete: () -> Unit,
     onCollapsedHeightChange: (Int) -> Unit = {},
 ) {
     val focusManager = LocalFocusManager.current
@@ -198,19 +202,21 @@ fun TaskSheet(
                 onClose = onClose,
                 onConfirm = onConfirm,
             )
-            // Notes only while expanded (collapsed, its top would peek out through the bottom padding); fades in and out.
+            // Notes and Delete only while expanded (collapsed, their top would peek out through the bottom padding);
+            // they fade in and out.
             AnimatedVisibility(
                 visible = expanded,
                 enter = fadeIn(tween(LayoutConst.NOTES_FADE_MILLIS)),
                 exit = fadeOut(tween(LayoutConst.NOTES_FADE_MILLIS)),
             ) {
-                NotesField(
-                    // Starts three lines tall and keeps growing with its text.
+                Column(
                     modifier = Modifier.padding(top = LayoutConst.SHEET_SPACING_DP.dp),
-                    notes = state.notes,
-                    enabled = !state.isSaving,
-                    onNotesChange = onNotesChange,
-                )
+                    verticalArrangement = Arrangement.spacedBy(LayoutConst.SHEET_PADDING_DP.dp),
+                ) {
+                    // Starts three lines tall and keeps growing with its text.
+                    NotesField(notes = state.notes, enabled = !state.isSaving, onNotesChange = onNotesChange)
+                    DeleteButton(enabled = !state.isSaving, onClick = onDelete)
+                }
             }
             Spacer(modifier = Modifier.height(LayoutConst.SHEET_PADDING_DP.dp))
         }
@@ -449,6 +455,33 @@ private fun FilledField(
     }
 }
 
+/** Full width, light red with red text, at the bottom of the expanded sheet; it asks before deleting. */
+@Composable
+private fun DeleteButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = enabled,
+        shape = RoundedCornerShape(LayoutConst.NAME_FIELD_CORNER_DP.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = colorScheme.errorContainer,
+            contentColor = colorScheme.error,
+        ),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_delete),
+            contentDescription = null,
+            modifier = Modifier.size(LayoutConst.SHEET_BUTTON_ICON_DP.dp),
+        )
+        Spacer(modifier = Modifier.width(LayoutConst.SHEET_SPACING_DP.dp))
+        Text(stringResource(R.string.delete_task))
+    }
+}
+
 /** The All day checkbox; the whole row toggles, not just the box. */
 @Composable
 private fun AllDayLine(
@@ -617,6 +650,7 @@ private fun SheetPreview(
             onColorChange = {},
             onClose = {},
             onConfirm = {},
+            onDelete = {},
         )
     }
 }

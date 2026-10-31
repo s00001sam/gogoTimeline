@@ -117,6 +117,8 @@ object LayoutConst {
     const val SAVE_DIALOG_PADDING_DP = 20f
     const val SAVE_DIALOG_CLOSE_ICON_DP = 20f
     const val SAVE_DIALOG_ELEVATION_DP = 6f
+    const val CONFIRM_TITLE_MAX_LINES = 2
+    const val CONFIRM_MESSAGE_GAP_DP = 8f
 
     // Task sheet
     const val SHEET_PADDING_DP = 16f

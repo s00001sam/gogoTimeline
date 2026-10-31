@@ -166,7 +166,7 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onEmptyTap()
-        viewModel.onCancelClose()
+        viewModel.onCancelDialog()
         assertFalse(viewModel.ready.editStatus.confirmingClose)
         assertEquals(later, viewModel.ready.edit!!.draft.schedule)
     }
@@ -229,11 +229,83 @@ class BoardViewModelTest {
         viewModel.onEmptyTap()
         viewModel.onSave(TAIPEI)
         viewModel.onTaskScheduleChange(B, b.schedule)
-        viewModel.onCancelClose()
+        viewModel.onCancelDialog()
         viewModel.onDiscard()
         assertTrue(viewModel.ready.editStatus.isSaving)
         assertEquals(later, viewModel.ready.edit!!.draft.schedule)
         saving.complete(Unit)
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun deleteAsksFirstThenDeletesWithoutAskingToSave() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onDeleteRequest()
+        assertEquals(EditStatus(confirmingDelete = true), viewModel.ready.editStatus)
+        coVerify(exactly = 0) { taskRepository.deleteTask(any(), any()) }
+        viewModel.onDeleteConfirm()
+        coVerify { taskRepository.deleteTask(BOARD, B) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        assertNull(viewModel.ready.edit)
+        assertEquals(EditStatus(), viewModel.ready.editStatus)
+    }
+
+    @Test
+    fun cancellingDeleteKeepsEditingWithTheDraft() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onDeleteRequest()
+        viewModel.onCancelDialog()
+        assertEquals(EditStatus(), viewModel.ready.editStatus)
+        assertEquals(later, viewModel.ready.edit!!.draft.schedule)
+        coVerify(exactly = 0) { taskRepository.deleteTask(any(), any()) }
+    }
+
+    @Test
+    fun deleteNeedsATaskBeingEdited() {
+        val viewModel = viewModel()
+        viewModel.onDeleteRequest()
+        viewModel.onDeleteConfirm()
+        assertEquals(EditStatus(), viewModel.ready.editStatus)
+        coVerify(exactly = 0) { taskRepository.deleteTask(any(), any()) }
+    }
+
+    @Test
+    fun failedDeleteKeepsEditingAndCanRetry() {
+        coEvery { taskRepository.deleteTask(any(), any()) } throws IllegalStateException("disk")
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onDeleteRequest()
+        viewModel.onDeleteConfirm()
+        assertEquals(EditStatus(confirmingDelete = true, deleteFailed = true), viewModel.ready.editStatus)
+        assertEquals(later, viewModel.ready.edit!!.draft.schedule)
+        coEvery { taskRepository.deleteTask(any(), any()) } returns Unit
+        viewModel.onDeleteConfirm()
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun nothingChangesOrClosesWhileDeleting() {
+        val deleting = CompletableDeferred<Unit>()
+        coEvery { taskRepository.deleteTask(any(), any()) } coAnswers { deleting.await() }
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onDeleteRequest()
+        viewModel.onDeleteConfirm()
+        viewModel.onTitleChange("Renamed")
+        viewModel.onTaskScheduleChange(B, b.schedule)
+        viewModel.onCancelDialog()
+        viewModel.onEmptyTap()
+        viewModel.onSave(TAIPEI)
+        viewModel.onDeleteConfirm()
+        assertTrue(viewModel.ready.editStatus.isDeleting)
+        assertFalse(viewModel.ready.canSave)
+        assertEquals("Task $B", viewModel.ready.edit!!.draft.title)
+        assertEquals(later, viewModel.ready.edit!!.draft.schedule)
+        coVerify(exactly = 1) { taskRepository.deleteTask(BOARD, B) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        deleting.complete(Unit)
         assertNull(viewModel.ready.edit)
     }
 
