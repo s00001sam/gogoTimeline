@@ -1,21 +1,69 @@
 package com.sam.gogotimeline.ui.board
 
 import androidx.lifecycle.SavedStateHandle
+import com.sam.gogotimeline.core.text.TaskTitle
+import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.DateRange
+import com.sam.gogotimeline.core.time.SheetTimeEdit
 import com.sam.gogotimeline.core.time.TaskSchedule
+import com.sam.gogotimeline.core.time.TimeError
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.data.model.Task
 import com.sam.gogotimeline.data.model.TaskEdit
 import java.time.LocalDate
 
-/** One task being edited: what it was when editing started, and the unsaved draft. */
+/**
+ * One task being edited: what it was when editing started, and the unsaved draft. The draft may hold invalid times
+ * typed in the sheet; the bar shows [lastValidSchedule] instead. [timesBeforeAllDay] restores the times when All day
+ * is unchecked right after checking it; it is not saved across process death (spec 7, decision 9).
+ */
 data class EditSession(
     val original: TaskEdit,
     val draft: TaskEdit,
+    val lastValidSchedule: TaskSchedule = draft.schedule,
+    val timesBeforeAllDay: TaskSchedule.Timed? = null,
 ) {
     val isDirty: Boolean get() = draft != original
 
-    fun withSchedule(schedule: TaskSchedule): EditSession = copy(draft = draft.copy(schedule = schedule))
+    val timeError: TimeError? get() = SheetTimeEdit.error(draft.schedule)
+
+    /** What ✓ and Save need: a valid name and valid times. */
+    val isValid: Boolean get() = TaskTitle.isValid(draft.title) && timeError == null
+
+    /** A drag result: always valid, and it replaces any times kept for unchecking All day. */
+    fun withSchedule(schedule: TaskSchedule): EditSession =
+        copy(draft = draft.copy(schedule = schedule), lastValidSchedule = schedule, timesBeforeAllDay = null)
+
+    /** A date or time picked in the sheet; may be invalid. A changed date no longer restores the pre-All-day times. */
+    fun withSheetSchedule(schedule: TaskSchedule): EditSession = copy(
+        draft = draft.copy(schedule = schedule),
+        lastValidSchedule = validOrLast(schedule),
+        timesBeforeAllDay = null,
+    )
+
+    /** Checking keeps the times to restore; unchecking restores them, or leaves both ends at 00:00. */
+    fun withAllDay(
+        checked: Boolean,
+        calendar: CalendarContext,
+    ): EditSession {
+        val schedule = draft.schedule
+        val (allDay, kept) = when {
+            checked && schedule is TaskSchedule.Timed -> SheetTimeEdit.toAllDay(schedule.range, calendar) to schedule
+
+            !checked && schedule is TaskSchedule.AllDay ->
+                (timesBeforeAllDay ?: SheetTimeEdit.fromAllDay(schedule.dates, calendar)) to null
+
+            else -> return this
+        }
+        return copy(
+            draft = draft.copy(schedule = allDay),
+            lastValidSchedule = validOrLast(allDay),
+            timesBeforeAllDay = kept,
+        )
+    }
+
+    private fun validOrLast(schedule: TaskSchedule): TaskSchedule =
+        if (SheetTimeEdit.error(schedule) == null) schedule else lastValidSchedule
 
     fun withTitle(title: String): EditSession = copy(draft = draft.copy(title = title))
 
@@ -49,9 +97,13 @@ data class EditSession(
             val original = handle.get<LongArray>(KEY_ORIGINAL) ?: return null
             val draft = handle.get<LongArray>(KEY_DRAFT) ?: return null
             val texts = handle.get<Array<String>>(KEY_TEXTS) ?: return null
+            val originalEdit = decode(original, title = texts[0], notes = texts[2])
+            val draftEdit = decode(draft, title = texts[1], notes = texts[3])
+            val draftValid = SheetTimeEdit.error(draftEdit.schedule) == null
             return EditSession(
-                original = decode(original, title = texts[0], notes = texts[2]),
-                draft = decode(draft, title = texts[1], notes = texts[3]),
+                original = originalEdit,
+                draft = draftEdit,
+                lastValidSchedule = if (draftValid) draftEdit.schedule else originalEdit.schedule,
             )
         }
 

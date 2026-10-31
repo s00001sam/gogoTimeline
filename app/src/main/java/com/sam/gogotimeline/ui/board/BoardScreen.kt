@@ -57,8 +57,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.time.CalendarContext
+import com.sam.gogotimeline.core.time.SheetTimeEdit
 import com.sam.gogotimeline.core.time.TaskSchedule
-import com.sam.gogotimeline.core.time.TaskTimeFormat
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
@@ -67,6 +67,8 @@ import com.sam.gogotimeline.data.model.TimelineSettings
 import com.sam.gogotimeline.ui.isTabletLayout
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
+import com.sam.gogotimeline.ui.sheet.Boundary
+import com.sam.gogotimeline.ui.sheet.SheetMoment
 import com.sam.gogotimeline.ui.sheet.TaskSheet
 import com.sam.gogotimeline.ui.sheet.TaskSheetState
 import com.sam.gogotimeline.ui.timeline.TimelineCallbacks
@@ -79,7 +81,9 @@ import com.sam.gogotimeline.ui.timeline.rememberCalendarContext
 import com.sam.gogotimeline.ui.timeline.rememberNow
 import com.sam.gogotimeline.ui.timeline.rememberTimelineState
 import java.time.DayOfWeek
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -100,7 +104,8 @@ fun BoardScreen(
         initialDpPerUnit = settings.zoom.dpPerUnit,
         calendar = calendar,
     )
-    val draft = ready?.edit?.draft
+    // The bar keeps the last valid times while the sheet shows invalid ones.
+    val draft = ready?.edit?.let { it.draft.copy(schedule = it.lastValidSchedule) }
     val tasks = remember(ready?.tasks, draft, calendar) {
         tasksWithDraft(ready?.tasks.orEmpty(), draft).map { it.toTimelineTask(calendar) }
     }
@@ -122,13 +127,17 @@ fun BoardScreen(
 
     val sheet = remember(ready?.edit, ready?.editStatus, calendar) {
         val edit = ready?.edit ?: return@remember null
-        val (start, end) = TaskTimeFormat.sheetTimes(edit.draft.schedule, calendar)
+        val schedule = edit.draft.schedule
         TaskSheetState(
             title = edit.draft.title,
             notes = edit.draft.notes,
-            start = start,
-            end = end,
-            isAllDay = edit.draft.schedule is TaskSchedule.AllDay,
+            start = SheetMoment(
+                SheetTimeEdit.startDate(schedule, calendar),
+                SheetTimeEdit.startTime(schedule, calendar),
+            ),
+            end = SheetMoment(SheetTimeEdit.endDate(schedule, calendar), SheetTimeEdit.endTime(schedule, calendar)),
+            isAllDay = schedule is TaskSchedule.AllDay,
+            timeError = edit.timeError,
             colorIndex = edit.draft.colorIndex,
             canSave = ready.canSave,
             isSaving = ready.editStatus.isSaving,
@@ -168,9 +177,29 @@ fun BoardScreen(
         sheet = sheet,
         onTitleChange = viewModel::onTitleChange,
         onNotesChange = viewModel::onNotesChange,
+        // Picked dates and times are applied to the draft's current (possibly invalid) times, not the bar's.
+        onDatePick = { boundary, date ->
+            val schedule = ready?.edit?.draft?.schedule ?: return@BoardContent
+            viewModel.onSheetScheduleChange(
+                when (boundary) {
+                    Boundary.START -> SheetTimeEdit.withStartDate(schedule, date, calendar)
+                    Boundary.END -> SheetTimeEdit.withEndDate(schedule, date, calendar)
+                },
+            )
+        },
+        onTimePick = { boundary, time ->
+            val schedule = ready?.edit?.draft?.schedule ?: return@BoardContent
+            viewModel.onSheetScheduleChange(
+                when (boundary) {
+                    Boundary.START -> SheetTimeEdit.withStartTime(schedule, time, calendar)
+                    Boundary.END -> SheetTimeEdit.withEndTime(schedule, time, calendar)
+                },
+            )
+        },
+        onAllDayChange = { viewModel.onAllDayChange(it, calendar) },
         onColorChange = viewModel::onColorChange,
         onCloseEditor = viewModel::onBack,
-        onConfirmEdit = viewModel::onConfirm,
+        onConfirmEdit = { viewModel.onConfirm(calendar) },
     )
     val editStatus = ready?.editStatus
     if (editStatus?.confirmingClose == true) {
@@ -178,7 +207,7 @@ fun BoardScreen(
             canSave = ready.canSave,
             isSaving = editStatus.isSaving,
             saveFailed = editStatus.saveFailed,
-            onSave = viewModel::onSave,
+            onSave = { viewModel.onSave(calendar) },
             onDiscard = viewModel::onDiscard,
             onCancel = viewModel::onCancelClose,
         )
@@ -207,6 +236,9 @@ fun BoardContent(
     sheet: TaskSheetState? = null,
     onTitleChange: (String) -> Unit = {},
     onNotesChange: (String) -> Unit = {},
+    onDatePick: (Boundary, LocalDate) -> Unit = { _, _ -> },
+    onTimePick: (Boundary, LocalTime) -> Unit = { _, _ -> },
+    onAllDayChange: (Boolean) -> Unit = {},
     onColorChange: (Int) -> Unit = {},
     onCloseEditor: () -> Unit = {},
     onConfirmEdit: () -> Unit = {},
@@ -304,6 +336,9 @@ fun BoardContent(
                         sheetState.currentValue == SheetValue.Expanded,
                     onTitleChange = onTitleChange,
                     onNotesChange = onNotesChange,
+                    onDatePick = onDatePick,
+                    onTimePick = onTimePick,
+                    onAllDayChange = onAllDayChange,
                     onColorChange = onColorChange,
                     onClose = onCloseEditor,
                     onConfirm = onConfirmEdit,
@@ -513,9 +548,10 @@ private fun BoardEditingPreview() {
         sheet = TaskSheetState(
             title = "Kickoff meeting",
             notes = "Agenda: goals, roles, timeline",
-            start = "Fri, Oct 30  09:00",
-            end = "Fri, Oct 30  10:30",
+            start = SheetMoment(LocalDate.of(2026, 10, 30), LocalTime.of(9, 0)),
+            end = SheetMoment(LocalDate.of(2026, 10, 30), LocalTime.of(10, 30)),
             isAllDay = false,
+            timeError = null,
             colorIndex = 0,
             canSave = true,
             isSaving = false,

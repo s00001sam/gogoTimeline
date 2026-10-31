@@ -2,8 +2,10 @@ package com.sam.gogotimeline.ui.board
 
 import androidx.lifecycle.SavedStateHandle
 import com.sam.gogotimeline.core.time.DateRange
+import com.sam.gogotimeline.core.time.SheetTimeEdit
 import com.sam.gogotimeline.core.time.TAIPEI
 import com.sam.gogotimeline.core.time.TaskSchedule
+import com.sam.gogotimeline.core.time.TimeError
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.at
 import com.sam.gogotimeline.data.model.Task
@@ -63,6 +65,36 @@ class EditSessionTest {
         val release = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 11, 7), LocalDate.of(2026, 11, 8)))
         val session = EditSession.from(task(schedule = release))
         assertEquals(session, session.roundTrip())
+    }
+
+    @Test
+    fun uncheckingAllDayRightAwayRestoresTheTimes() {
+        val session = EditSession.from(task()).withAllDay(true, TAIPEI).withAllDay(false, TAIPEI)
+        assertEquals(kickoff, session.draft.schedule)
+    }
+
+    @Test
+    fun uncheckingAfterADateChangeLeavesMidnights() {
+        val checked = EditSession.from(task()).withAllDay(true, TAIPEI)
+        val moved = checked.withSheetSchedule(
+            SheetTimeEdit.withEndDate(checked.draft.schedule, LocalDate.of(2026, 11, 2), TAIPEI),
+        )
+        val unchecked = moved.withAllDay(false, TAIPEI)
+        assertEquals(
+            TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T00:00"), TAIPEI.at("2026-11-03T00:00"))),
+            unchecked.draft.schedule,
+        )
+    }
+
+    @Test
+    fun invalidTimesKeepTheLastValidOnesForTheBar() {
+        val invalid = TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T13:00"), TAIPEI.at("2026-10-31T10:30")))
+        val session = EditSession.from(task()).withSheetSchedule(later).withSheetSchedule(invalid)
+        assertEquals(later, session.lastValidSchedule)
+        assertEquals(TimeError.END_NOT_AFTER_START, session.timeError)
+        val restored = session.roundTrip()!!
+        assertEquals(invalid, restored.draft.schedule)
+        assertEquals(kickoff, restored.lastValidSchedule)
     }
 
     @Test

@@ -1,6 +1,5 @@
 package com.sam.gogotimeline.ui.board
 
-import com.sam.gogotimeline.core.text.TaskTitle
 import com.sam.gogotimeline.data.model.Board
 import com.sam.gogotimeline.data.model.Task
 import com.sam.gogotimeline.data.model.TimelineSettings
@@ -20,8 +19,8 @@ sealed interface BoardUiState {
     ) : BoardUiState {
         val selectedTaskId: Long? get() = edit?.draft?.taskId
 
-        /** ✓ and the dialog's Save: a valid name and not already saving. */
-        val canSave: Boolean get() = edit?.draft?.title?.let(TaskTitle::isValid) == true && !editStatus.isSaving
+        /** ✓ and the dialog's Save: a valid name and times, and not already saving. */
+        val canSave: Boolean get() = edit?.isValid == true && !editStatus.isSaving
     }
 }
 

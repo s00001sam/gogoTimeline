@@ -1,6 +1,7 @@
 package com.sam.gogotimeline.core.time
 
 import java.time.LocalDate
+import java.time.LocalTime
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -88,29 +89,20 @@ class TaskTimeFormatTest {
     }
 
     @Test
-    fun sheetShowsDateAndTimeForTimedTasks() {
-        val range = TimeRange(TAIPEI.at("2026-10-29T09:00"), TAIPEI.at("2026-10-29T10:30"))
-        assertEquals(
-            "Thu, Oct 29  09:00" to "Thu, Oct 29  10:30",
-            TaskTimeFormat.sheetTimes(TaskSchedule.Timed(range), TAIPEI),
-        )
+    fun sheetShowsDateAndTimeSeparately() {
+        assertEquals("Thu, Oct 29", TaskTimeFormat.sheetDate(LocalDate.of(2026, 10, 29)))
+        assertEquals("09:00", TaskTimeFormat.sheetTime(LocalTime.of(9, 0)))
     }
 
     @Test
-    fun sheetShowsOneAllDayDateOnBothLines() {
-        val day = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 10, 30), LocalDate.of(2026, 10, 31)))
-        assertEquals("Fri, Oct 30" to "Fri, Oct 30", TaskTimeFormat.sheetTimes(day, TAIPEI))
+    fun sheetShowsMidnightIn24HoursAndUnpaddedDays() {
+        assertEquals("00:00", TaskTimeFormat.sheetTime(LocalTime.MIDNIGHT))
+        assertEquals("Sun, Mar 8", TaskTimeFormat.sheetDate(LocalDate.of(2026, 3, 8)))
     }
 
     @Test
-    fun sheetAllDayEndStepsBackAcrossAMonth() {
-        val days = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 1)))
-        assertEquals("Fri, Oct 30" to "Sat, Oct 31", TaskTimeFormat.sheetTimes(days, TAIPEI))
-    }
-
-    @Test
-    fun sheetAllDayKeepsItsDateOnADaylightSavingDay() {
-        val springForward = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 3, 8), LocalDate.of(2026, 3, 9)))
-        assertEquals("Sun, Mar 8" to "Sun, Mar 8", TaskTimeFormat.sheetTimes(springForward, NEW_YORK))
+    fun sheetDatesAtThePickerLimitsKeepTheirWeekday() {
+        assertEquals("Mon, Jan 1", TaskTimeFormat.sheetDate(LocalDate.of(1900, 1, 1)))
+        assertEquals("Fri, Dec 31", TaskTimeFormat.sheetDate(LocalDate.of(2100, 12, 31)))
     }
 }

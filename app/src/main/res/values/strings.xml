@@ -28,4 +28,14 @@
     <string name="color_indigo">Indigo</string>
     <string name="color_violet">Violet</string>
     <string name="save_failed">Couldn’t save changes. Please try again.</string>
+    <string name="end_not_after_start">End time must be after start time.</string>
+    <string name="too_short">Duration must be at least 15 minutes.</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="hour">Hour</string>
+    <string name="minute">Minute</string>
+    <string name="previous_hour">Previous hour</string>
+    <string name="next_hour">Next hour</string>
+    <string name="previous_minutes">Previous minutes</string>
+    <string name="next_minutes">Next minutes</string>
 </resources>

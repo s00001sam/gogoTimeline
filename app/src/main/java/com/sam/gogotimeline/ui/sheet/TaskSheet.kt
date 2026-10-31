@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -52,10 +54,13 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -73,24 +78,49 @@ import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.text.TaskNotes
 import com.sam.gogotimeline.core.text.TaskTitle
+import com.sam.gogotimeline.core.time.TaskTimeFormat
+import com.sam.gogotimeline.core.time.TimeError
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
 import com.sam.gogotimeline.ui.theme.GogoTimelineTheme
+import java.time.LocalDate
+import java.time.LocalTime
 import kotlin.math.roundToInt
 
-/** What the task sheet shows; times are already formatted for the current time zone. */
+/** What the task sheet shows; dates and times are local to the current time zone. */
 @Immutable
 data class TaskSheetState(
     val title: String,
     val notes: String,
-    val start: String,
-    val end: String,
+    val start: SheetMoment,
+    val end: SheetMoment,
     val isAllDay: Boolean,
+    val timeError: TimeError?,
     val colorIndex: Int,
     val canSave: Boolean,
     val isSaving: Boolean,
     val saveFailed: Boolean,
 )
+
+/** A start or end as the sheet shows it: the date, and the time unless the task is all-day. */
+@Immutable
+data class SheetMoment(
+    val date: LocalDate,
+    val time: LocalTime?,
+)
+
+/** Which end of the task a date or time was picked for. */
+enum class Boundary { START, END }
+
+private enum class OpenPicker(
+    val boundary: Boundary,
+    val isDate: Boolean,
+) {
+    START_DATE(Boundary.START, isDate = true),
+    START_TIME(Boundary.START, isDate = false),
+    END_DATE(Boundary.END, isDate = true),
+    END_TIME(Boundary.END, isDate = false),
+}
 
 /**
  * The task sheet. The top part (× / ✓, name, times, All day, colors) shows while collapsed; dragging up opens the
@@ -105,6 +135,9 @@ fun TaskSheet(
     expanded: Boolean,
     onTitleChange: (String) -> Unit,
     onNotesChange: (String) -> Unit,
+    onDatePick: (Boundary, LocalDate) -> Unit,
+    onTimePick: (Boundary, LocalTime) -> Unit,
+    onAllDayChange: (Boolean) -> Unit,
     onColorChange: (Int) -> Unit,
     onClose: () -> Unit,
     onConfirm: () -> Unit,
@@ -158,6 +191,9 @@ fun TaskSheet(
                 state = state,
                 onNameBottomInRoot = { nameBottomPx = it },
                 onTitleChange = onTitleChange,
+                onDatePick = onDatePick,
+                onTimePick = onTimePick,
+                onAllDayChange = onAllDayChange,
                 onColorChange = onColorChange,
                 onClose = onClose,
                 onConfirm = onConfirm,
@@ -187,11 +223,15 @@ private fun CollapsedPart(
     state: TaskSheetState,
     onNameBottomInRoot: (Float) -> Unit,
     onTitleChange: (String) -> Unit,
+    onDatePick: (Boundary, LocalDate) -> Unit,
+    onTimePick: (Boundary, LocalTime) -> Unit,
+    onAllDayChange: (Boolean) -> Unit,
     onColorChange: (Int) -> Unit,
     onClose: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    var openPicker by rememberSaveable { mutableStateOf<OpenPicker?>(null) }
     Column(
         modifier = modifier.padding(top = LayoutConst.SHEET_TOP_PADDING_DP.dp),
         verticalArrangement = Arrangement.spacedBy(LayoutConst.SHEET_SPACING_DP.dp),
@@ -257,10 +297,53 @@ private fun CollapsedPart(
                 color = colorScheme.error,
             )
         }
-        TimeLine(label = stringResource(R.string.start), value = state.start)
-        TimeLine(label = stringResource(R.string.end), value = state.end)
-        AllDayLine(checked = state.isAllDay)
+        TimeLine(
+            label = stringResource(R.string.start),
+            moment = state.start,
+            enabled = !state.isSaving,
+            onDateClick = { openPicker = OpenPicker.START_DATE },
+            onTimeClick = { openPicker = OpenPicker.START_TIME },
+        )
+        TimeLine(
+            label = stringResource(R.string.end),
+            moment = state.end,
+            enabled = !state.isSaving,
+            onDateClick = { openPicker = OpenPicker.END_DATE },
+            onTimeClick = { openPicker = OpenPicker.END_TIME },
+        )
+        state.timeError?.let { error ->
+            Text(
+                text = stringResource(
+                    when (error) {
+                        TimeError.END_NOT_AFTER_START -> R.string.end_not_after_start
+                        TimeError.TOO_SHORT -> R.string.too_short
+                    },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = colorScheme.error,
+            )
+        }
+        AllDayLine(checked = state.isAllDay, enabled = !state.isSaving, onCheckedChange = onAllDayChange)
         ColorPicker(selected = state.colorIndex, enabled = !state.isSaving, onSelect = onColorChange)
+    }
+    openPicker?.let { picker ->
+        val moment = if (picker.boundary == Boundary.START) state.start else state.end
+        val close = { openPicker = null }
+        if (picker.isDate) {
+            SheetDatePickerDialog(
+                initial = moment.date,
+                onPick = { onDatePick(picker.boundary, it) },
+                onDismiss = close,
+            )
+        } else {
+            moment.time?.let { time ->
+                SheetTimePickerDialog(
+                    initial = time,
+                    onPick = { onTimePick(picker.boundary, it) },
+                    onDismiss = close,
+                )
+            }
+        }
     }
 }
 
@@ -366,11 +449,23 @@ private fun FilledField(
     }
 }
 
-/** Shows whether the task is all-day; toggling it by hand, with its own time rules, comes in step 5-3b. */
+/** The All day checkbox; the whole row toggles, not just the box. */
 @Composable
-private fun AllDayLine(checked: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = checked, onCheckedChange = null, enabled = false)
+private fun AllDayLine(
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.toggleable(
+            value = checked,
+            enabled = enabled,
+            role = Role.Checkbox,
+            onValueChange = onCheckedChange,
+        ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
         Text(
             text = stringResource(R.string.all_day),
             modifier = Modifier.padding(start = LayoutConst.SHEET_SPACING_DP.dp),
@@ -379,20 +474,48 @@ private fun AllDayLine(checked: Boolean) {
     }
 }
 
+/** A label with a date button and, for timed tasks, a time button (spec 7, decisions 1 and 6). */
 @Composable
 private fun TimeLine(
     label: String,
-    value: String,
+    moment: SheetMoment,
+    enabled: Boolean,
+    onDateClick: () -> Unit,
+    onTimeClick: () -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(LayoutConst.SHEET_SPACING_DP.dp),
+    ) {
         Text(
             text = label,
             modifier = Modifier.widthIn(min = LayoutConst.SHEET_TIME_LABEL_MIN_WIDTH_DP.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(text = value, style = MaterialTheme.typography.bodyMedium)
+        Chip(text = TaskTimeFormat.sheetDate(moment.date), enabled = enabled, onClick = onDateClick)
+        moment.time?.let { Chip(text = TaskTimeFormat.sheetTime(it), enabled = enabled, onClick = onTimeClick) }
     }
+}
+
+@Composable
+private fun Chip(
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .clip(RoundedCornerShape(LayoutConst.SHEET_CHIP_CORNER_DP.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(
+                horizontal = LayoutConst.SHEET_CHIP_PADDING_HORIZONTAL_DP.dp,
+                vertical = LayoutConst.SHEET_CHIP_PADDING_VERTICAL_DP.dp,
+            ),
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 /**
@@ -467,9 +590,10 @@ private val colorNames = listOf(
 private val previewState = TaskSheetState(
     title = "Kickoff meeting",
     notes = "Agenda: goals, roles, timeline",
-    start = "Fri, Oct 31  09:00",
-    end = "Fri, Oct 31  10:30",
+    start = SheetMoment(LocalDate.of(2026, 10, 31), LocalTime.of(9, 0)),
+    end = SheetMoment(LocalDate.of(2026, 10, 31), LocalTime.of(10, 30)),
     isAllDay = false,
+    timeError = null,
     colorIndex = 0,
     canSave = true,
     isSaving = false,
@@ -487,6 +611,9 @@ private fun SheetPreview(
             expanded = expanded,
             onTitleChange = {},
             onNotesChange = {},
+            onDatePick = { _, _ -> },
+            onTimePick = { _, _ -> },
+            onAllDayChange = {},
             onColorChange = {},
             onClose = {},
             onConfirm = {},
@@ -517,5 +644,17 @@ private fun TaskSheetFailedPreview() = SheetPreview(previewState.copy(saveFailed
 
 @ThemePreviews
 @Composable
-private fun TaskSheetAllDayPreview() =
-    SheetPreview(previewState.copy(start = "Sat, Nov 7", end = "Sat, Nov 7", isAllDay = true, colorIndex = 5))
+private fun TaskSheetInvalidTimesPreview() = SheetPreview(
+    previewState.copy(
+        end = SheetMoment(LocalDate.of(2026, 10, 31), LocalTime.of(8, 0)),
+        timeError = TimeError.END_NOT_AFTER_START,
+        canSave = false,
+    ),
+)
+
+@ThemePreviews
+@Composable
+private fun TaskSheetAllDayPreview() {
+    val day = SheetMoment(LocalDate.of(2026, 11, 7), time = null)
+    SheetPreview(previewState.copy(start = day, end = day, isAllDay = true, colorIndex = 5))
+}

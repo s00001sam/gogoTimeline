@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sam.gogotimeline.core.text.TaskNotes
 import com.sam.gogotimeline.core.text.TaskTitle
+import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.data.repository.BoardRepository
@@ -101,26 +102,49 @@ class BoardViewModel @Inject constructor(
         if (!editStatus.value.isSaving) setEdit(session.withColor(colorIndex))
     }
 
-    /** ✓: nothing to save just ends editing; otherwise saves. */
-    fun onConfirm() {
+    /** A date or time picked in the sheet; it may be invalid and then blocks saving. */
+    fun onSheetScheduleChange(schedule: TaskSchedule) {
         val session = edit.value ?: return
-        if (!TaskTitle.isValid(session.draft.title)) return
+        if (!editStatus.value.isSaving) setEdit(session.withSheetSchedule(schedule))
+    }
+
+    fun onAllDayChange(
+        checked: Boolean,
+        calendar: CalendarContext,
+    ) {
+        val session = edit.value ?: return
+        if (!editStatus.value.isSaving) setEdit(session.withAllDay(checked, calendar))
+    }
+
+    /** ✓: nothing to save just ends editing; otherwise saves. */
+    fun onConfirm(calendar: CalendarContext) {
+        val session = edit.value ?: return
+        if (!session.isValid) return
         if (session.isDirty) {
-            onSave()
+            onSave(calendar)
         } else if (!editStatus.value.isSaving) {
             endEditing()
         }
     }
 
-    fun onSave() {
+    /**
+     * Saves the draft. Timed drafts become all-day when both ends sit on local midnights (spec 7: decided on Save,
+     * not while picking), which needs the current [calendar].
+     */
+    fun onSave(calendar: CalendarContext) {
         val session = edit.value ?: return
-        if (editStatus.value.isSaving || !TaskTitle.isValid(session.draft.title)) return
+        if (editStatus.value.isSaving || !session.isValid) return
         editStatus.update { it.copy(isSaving = true, saveFailed = false) }
         viewModelScope.launch {
             try {
                 val draft = session.draft
+                val schedule = (draft.schedule as? TaskSchedule.Timed)?.let { TaskSchedule.from(it.range, calendar) }
                 taskRepository.saveTask(
-                    draft.copy(title = draft.title.trim(), notes = TaskNotes.normalize(draft.notes)),
+                    draft.copy(
+                        title = draft.title.trim(),
+                        notes = TaskNotes.normalize(draft.notes),
+                        schedule = schedule ?: draft.schedule,
+                    ),
                 )
                 endEditing()
             } catch (cancelled: CancellationException) {

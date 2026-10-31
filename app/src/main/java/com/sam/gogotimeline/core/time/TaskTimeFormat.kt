@@ -2,6 +2,7 @@ package com.sam.gogotimeline.core.time
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -41,25 +42,11 @@ object TaskTimeFormat {
         }
     }
 
-    /**
-     * Start and end lines in the task sheet: `Thu, Oct 29  09:00`, or dates only for all-day tasks, where the
-     * shown end is the stored (exclusive) end date minus one day (spec 7.2).
-     */
-    fun sheetTimes(
-        schedule: TaskSchedule,
-        calendar: CalendarContext,
-    ): Pair<String, String> = when (schedule) {
-        is TaskSchedule.AllDay -> sheetDateFormat.format(schedule.dates.start) to
-            sheetDateFormat.format(maxOf(schedule.dates.end.minusDays(1), schedule.dates.start))
+    /** The date button in the task sheet, e.g. `Thu, Oct 29`. */
+    fun sheetDate(date: LocalDate): String = sheetDateFormat.format(date)
 
-        is TaskSchedule.Timed -> {
-            fun line(time: Long): String {
-                val local = Instant.ofEpochMilli(time).atZone(calendar.zone)
-                return "${sheetDateFormat.format(local)}  ${timeFormat.format(local)}"
-            }
-            line(schedule.range.start) to line(schedule.range.end)
-        }
-    }
+    /** The time button in the task sheet, 24-hour, e.g. `09:00`. */
+    fun sheetTime(time: LocalTime): String = timeFormat.format(time)
 
     /** Label near the finger while dragging: `14:30` for snaps under a day, `Oct 29 00:00` otherwise. */
     fun dragLabel(

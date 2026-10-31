@@ -1,6 +1,7 @@
 package com.sam.gogotimeline.ui.board
 
 import androidx.lifecycle.SavedStateHandle
+import com.sam.gogotimeline.core.time.DateRange
 import com.sam.gogotimeline.core.time.TAIPEI
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.TimeRange
@@ -19,6 +20,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -117,7 +119,7 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onEmptyTap()
-        viewModel.onSave()
+        viewModel.onSave(TAIPEI)
         coVerify { taskRepository.saveTask(TaskEdit(B, "Task $B", later, colorIndex = 1)) }
         assertNull(viewModel.ready.edit)
         assertEquals(EditStatus(), viewModel.ready.editStatus)
@@ -210,7 +212,7 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onEmptyTap()
-        viewModel.onSave()
+        viewModel.onSave(TAIPEI)
         assertEquals(
             EditStatus(confirmingClose = true, isSaving = false, saveFailed = true),
             viewModel.ready.editStatus,
@@ -225,7 +227,7 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onEmptyTap()
-        viewModel.onSave()
+        viewModel.onSave(TAIPEI)
         viewModel.onTaskScheduleChange(B, b.schedule)
         viewModel.onCancelClose()
         viewModel.onDiscard()
@@ -280,7 +282,7 @@ class BoardViewModelTest {
     fun confirmWithoutChangesJustEndsEditing() {
         val viewModel = viewModel()
         viewModel.onTaskTap(B)
-        viewModel.onConfirm()
+        viewModel.onConfirm(TAIPEI)
         assertNull(viewModel.ready.edit)
         coVerify(exactly = 0) { taskRepository.saveTask(any()) }
     }
@@ -290,7 +292,7 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.onTaskTap(B)
         viewModel.onTitleChange("  Renamed  ")
-        viewModel.onConfirm()
+        viewModel.onConfirm(TAIPEI)
         coVerify { taskRepository.saveTask(TaskEdit(B, "Renamed", b.schedule, colorIndex = 1)) }
         assertNull(viewModel.ready.edit)
     }
@@ -301,8 +303,8 @@ class BoardViewModelTest {
         viewModel.onTaskTap(B)
         viewModel.onTitleChange("   ")
         assertFalse(viewModel.ready.canSave)
-        viewModel.onConfirm()
-        viewModel.onSave()
+        viewModel.onConfirm(TAIPEI)
+        viewModel.onSave(TAIPEI)
         coVerify(exactly = 0) { taskRepository.saveTask(any()) }
         assertEquals(B, viewModel.ready.selectedTaskId)
     }
@@ -313,7 +315,7 @@ class BoardViewModelTest {
         coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
-        viewModel.onConfirm()
+        viewModel.onConfirm(TAIPEI)
         viewModel.onTitleChange("Too late")
         assertEquals("Task $B", viewModel.ready.edit!!.draft.title)
         assertFalse(viewModel.ready.canSave)
@@ -346,7 +348,7 @@ class BoardViewModelTest {
         viewModel.onTaskTap(B)
         viewModel.onTitleChange("Plan\nrelease")
         assertEquals("Plan release", viewModel.ready.edit!!.draft.title)
-        viewModel.onConfirm()
+        viewModel.onConfirm(TAIPEI)
         viewModel.onColorChange(6)
         assertEquals(1, viewModel.ready.edit!!.draft.colorIndex)
         saving.complete(Unit)
@@ -368,10 +370,47 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.onTaskTap(B)
         viewModel.onNotesChange("Bring laptops\n\n")
-        viewModel.onConfirm()
+        viewModel.onConfirm(TAIPEI)
         coVerify {
             taskRepository.saveTask(TaskEdit(B, "Task $B", b.schedule, colorIndex = 1, notes = "Bring laptops"))
         }
+    }
+
+    @Test
+    fun invalidTimesCannotBeSaved() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onSheetScheduleChange(
+            TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T13:00"), TAIPEI.at("2026-10-31T10:30"))),
+        )
+        assertFalse(viewModel.ready.canSave)
+        viewModel.onConfirm(TAIPEI)
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+    }
+
+    @Test
+    fun midnightToMidnightIsSavedAsAllDay() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onSheetScheduleChange(
+            TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T00:00"), TAIPEI.at("2026-11-02T00:00"))),
+        )
+        viewModel.onConfirm(TAIPEI)
+        val allDay = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 10, 31), LocalDate.of(2026, 11, 2)))
+        coVerify { taskRepository.saveTask(TaskEdit(B, "Task $B", allDay, colorIndex = 1)) }
+    }
+
+    @Test
+    fun timesAndAllDayWaitWhileSaving() {
+        val saving = CompletableDeferred<Unit>()
+        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onConfirm(TAIPEI)
+        viewModel.onSheetScheduleChange(b.schedule)
+        viewModel.onAllDayChange(true, TAIPEI)
+        assertEquals(later, viewModel.ready.edit!!.draft.schedule)
+        saving.complete(Unit)
     }
 
     private companion object {

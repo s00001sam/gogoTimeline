@@ -127,6 +127,15 @@ object LayoutConst {
     const val SHEET_HANDLE_HEIGHT_DP = 4f
     const val SHEET_HANDLE_ALPHA = 0.4f
     const val SHEET_TIME_LABEL_MIN_WIDTH_DP = 56f
+    const val SHEET_CHIP_CORNER_DP = 8f
+    const val SHEET_CHIP_PADDING_HORIZONTAL_DP = 8f
+    const val SHEET_CHIP_PADDING_VERTICAL_DP = 4f
+    const val TIME_PICKER_REPEAT_DELAY_MILLIS = 400L
+    const val TIME_PICKER_REPEAT_MILLIS = 150L
+    const val TIME_PICKER_COLON_WIDTH_DP = 16f
+    const val TIME_PICKER_NUMBER_DP = 28f
+    const val TIME_PICKER_MAX_WIDTH_DP = 360f
+    const val TIME_PICKER_SIDE_MARGIN_DP = 16f
     const val SHEET_BUTTON_SIZE_DP = 32f
     const val SHEET_BUTTON_ICON_DP = 18f
     const val NAME_FIELD_CORNER_DP = 12f
