@@ -39,4 +39,15 @@ object TaskTimeFormat {
             else -> "${dateTime(start)} – ${dateTime(end)}"
         }
     }
+
+    /** Label near the finger while dragging: `14:30` for snaps under a day, `Oct 29 00:00` otherwise. */
+    fun dragLabel(
+        time: Long,
+        snap: SnapInterval,
+        calendar: CalendarContext,
+    ): String {
+        val local = Instant.ofEpochMilli(time).atZone(calendar.zone)
+        val clock = timeFormat.format(local)
+        return if (snap.minutes < SnapInterval.DAY_MINUTES) clock else "${dateFormat.format(local)} $clock"
+    }
 }

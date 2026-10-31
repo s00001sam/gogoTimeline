@@ -1,5 +1,7 @@
 package com.sam.gogotimeline.ui.timeline
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -15,9 +17,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -44,7 +48,10 @@ fun leftPaneWidth(
     else -> LayoutConst.NAME_COLUMN_PHONE_COLLAPSED_DP
 }.dp
 
-/** Top-left corner: only the round arrow, centered. The whole area toggles the pane. */
+/**
+ * Top-left corner: only the round arrow, centered. The whole area toggles the pane. The arrow points right when
+ * collapsed and rotates half a turn to point left when expanded, in step with the pane's width animation.
+ */
 @Composable
 internal fun LeftPaneCorner(
     modifier: Modifier = Modifier,
@@ -53,6 +60,11 @@ internal fun LeftPaneCorner(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val description = stringResource(if (expanded) R.string.collapse_task_list else R.string.expand_task_list)
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) LayoutConst.CORNER_ARROW_EXPANDED_ROTATION_DEGREES else 0f,
+        animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
+        label = "leftPaneArrow",
+    )
     Box(
         modifier = modifier
             .background(colorScheme.surface)
@@ -67,9 +79,11 @@ internal fun LeftPaneCorner(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                painter = painterResource(if (expanded) R.drawable.ic_chevron_left else R.drawable.ic_chevron_right),
+                painter = painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
-                modifier = Modifier.size(LayoutConst.CORNER_ARROW_ICON_DP.dp),
+                modifier = Modifier
+                    .size(LayoutConst.CORNER_ARROW_ICON_DP.dp)
+                    .rotate(arrowRotation),
                 tint = colorScheme.onSecondaryContainer,
             )
         }

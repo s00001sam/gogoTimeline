@@ -291,6 +291,32 @@ class TimelineStateTest {
         }
     }
 
+    @Test
+    fun timeLandsAtTheRequestedX() = runTest {
+        val state = state()
+        val target = TAIPEI.at("2026-10-30T14:00").toDouble()
+        withContext(TestFrameClock()) { state.animateTimeToX(target, 48f) }
+        assertEquals(48f, state.timeToX(target), EPSILON)
+        assertEquals(ZoomLevel(TimeUnit.HOUR, 64f), state.zoomLevel)
+    }
+
+    @Test
+    fun timeToXStopsAtTheLimit() = runTest {
+        val state = state()
+        withContext(TestFrameClock()) { state.animateTimeToX(TAIPEI.at("1900-01-01T00:00").toDouble(), 48f) }
+        assertEquals(48f, state.timeToX(TimeLimits.MIN.toDouble()), EPSILON)
+        assertTrue(state.centerTime >= TimeLimits.MIN)
+    }
+
+    @Test
+    fun timeToXFromFarAwayIsJustAsFast() = runTest {
+        val state = state(centerTime = TAIPEI.at("1951-10-30T12:00").toDouble())
+        val clock = CountingFrameClock()
+        withContext(clock) { state.animateTimeToX(noon, 48f) }
+        assertEquals(48f, state.timeToX(noon), EPSILON)
+        assertTrue(clock.frames <= 21)
+    }
+
     private companion object {
         const val DENSITY = 2f
         const val AXIS_LEFT_PX = 380f

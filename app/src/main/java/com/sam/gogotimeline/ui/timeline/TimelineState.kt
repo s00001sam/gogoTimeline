@@ -143,19 +143,28 @@ class TimelineState(
         dpPerUnit = target.dpPerUnit
     }
 
+    /** Smoothly scrolls so [time] is centered, keeping unit and zoom. */
+    suspend fun animateCenterTo(time: Double) = animateTimeToX(time, viewportWidthPx / 2)
+
     /**
-     * Smoothly scrolls so [time] is centered, keeping unit and zoom. Moves in unit coordinates so months
-     * of different lengths scroll at an even speed; takes the same time however far away [time] is.
+     * Smoothly scrolls so [time] lands at [x] px from the time axis' left edge, keeping unit and zoom. Moves in
+     * unit coordinates so months of different lengths scroll at an even speed; takes the same time however
+     * far away [time] is, and stays within the scroll limits.
      */
-    suspend fun animateCenterTo(time: Double) = mutatorMutex.mutate {
+    suspend fun animateTimeToX(
+        time: Double,
+        x: Float,
+    ) = mutatorMutex.mutate {
         val target = TimeLimits.clamp(time)
         val axis = calendar.axis(unit)
+        val offset = (x - viewportWidthPx / 2) / (dpPerUnit.toDouble() * density)
         val from = axis.position(centerTime)
-        val to = axis.position(target)
+        val to = axis.position(target) - offset
         animate(0f, 1f, animationSpec = tween(LayoutConst.ZOOM_ANIMATION_MILLIS)) { progress, _ ->
-            centerTime = axis.timeAt(from + (to - from) * progress)
+            centerTime = TimeLimits.clamp(axis.timeAt(from + (to - from) * progress))
         }
-        centerTime = target
+        // Centering lands exactly on the target, without a tiny rounding error from the round trip.
+        centerTime = TimeLimits.clamp(if (offset == 0.0) target else axis.timeAt(to))
     }
 
     /** Called on touch-down: cancels a running fling or zoom animation. */

@@ -1,6 +1,8 @@
 package com.sam.gogotimeline.ui.board
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,13 +34,17 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
+import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
+import com.sam.gogotimeline.core.time.TaskTimes
+import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.core.time.ZoomRules
 import com.sam.gogotimeline.ui.isTabletLayout
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
+import com.sam.gogotimeline.ui.timeline.TimelineCallbacks
 import com.sam.gogotimeline.ui.timeline.TimelineScheduler
 import com.sam.gogotimeline.ui.timeline.TimelineState
 import com.sam.gogotimeline.ui.timeline.TimelineTask
@@ -52,7 +58,10 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.launch
 
-/** The board screen. Until Room is wired up in step 4, it shows fake tasks and opens on "now" in Day mode. */
+/**
+ * The board screen. Until Room is wired up in step 4, it keeps fake tasks in memory, applies drags to them
+ * directly, and opens on "now" in Day mode.
+ */
 @Composable
 fun BoardScreen(modifier: Modifier = Modifier) {
     val calendar = rememberCalendarContext()
@@ -62,7 +71,8 @@ fun BoardScreen(modifier: Modifier = Modifier) {
         initialDpPerUnit = TimeUnit.DAY.standardWidthDp,
         calendar = calendar,
     )
-    val tasks = remember(calendar) { FakeTimelineData.tasks(System.currentTimeMillis(), calendar) }
+    var tasks by remember(calendar) { mutableStateOf(FakeTimelineData.tasks(System.currentTimeMillis(), calendar)) }
+    var selectedTaskId by rememberSaveable { mutableStateOf<Long?>(null) }
     var leftPaneExpanded by rememberSaveable { mutableStateOf(false) }
     val now = rememberNow()
     val todayDayOfMonth by remember(calendar) { derivedStateOf { calendar.localDate(now.value).dayOfMonth } }
@@ -73,6 +83,19 @@ fun BoardScreen(modifier: Modifier = Modifier) {
         state = state,
         calendar = calendar,
         tasks = tasks,
+        selectedTaskId = selectedTaskId,
+        callbacks = TimelineCallbacks(
+            onTaskTap = { selectedTaskId = it },
+            onEmptyTap = { selectedTaskId = null },
+            onTaskTimeChange = { id, start, end ->
+                // A drag that lands on full local days becomes all-day; otherwise it stops being all-day (spec 7).
+                val isAllDay = TaskTimes.isAllDay(TimeRange(start, end), calendar)
+                tasks = tasks.map { if (it.id == id) it.copy(start = start, end = end, isAllDay = isAllDay) else it }
+            },
+            onTaskMove = { id, toIndex ->
+                tasks = GestureMath.moveItem(tasks, tasks.indexOfFirst { it.id == id }, toIndex)
+            },
+        ),
         leftPaneExpanded = leftPaneExpanded,
         onToggleLeftPane = { leftPaneExpanded = !leftPaneExpanded },
         todayDayOfMonth = todayDayOfMonth,
@@ -88,6 +111,8 @@ fun BoardContent(
     state: TimelineState,
     calendar: CalendarContext,
     tasks: List<TimelineTask>,
+    selectedTaskId: Long?,
+    callbacks: TimelineCallbacks,
     leftPaneExpanded: Boolean,
     onToggleLeftPane: () -> Unit,
     todayDayOfMonth: Int,
@@ -95,6 +120,11 @@ fun BoardContent(
     onZoomChange: (ZoomLevel) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    val paneWidth by animateDpAsState(
+        targetValue = leftPaneWidth(isTabletLayout(), leftPaneExpanded),
+        animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
+        label = "leftPaneWidth",
+    )
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -128,9 +158,11 @@ fun BoardContent(
             state = state,
             calendar = calendar,
             tasks = tasks,
-            leftPaneWidth = leftPaneWidth(isTabletLayout(), leftPaneExpanded),
+            leftPaneWidth = paneWidth,
             leftPaneExpanded = leftPaneExpanded,
             onToggleLeftPane = onToggleLeftPane,
+            selectedTaskId = selectedTaskId,
+            callbacks = callbacks,
             onZoomChange = onZoomChange,
         )
     }
@@ -198,6 +230,8 @@ private fun BoardContentPreview() {
             },
             calendar = calendar,
             tasks = FakeTimelineData.tasks(now, calendar),
+            selectedTaskId = 1L,
+            callbacks = TimelineCallbacks(),
             leftPaneExpanded = false,
             onToggleLeftPane = {},
             todayDayOfMonth = 30,

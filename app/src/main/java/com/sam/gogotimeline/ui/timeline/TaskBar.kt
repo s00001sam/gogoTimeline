@@ -63,22 +63,30 @@ internal fun TaskBar(
                         cornerRadius = corner,
                         style = Stroke(stroke),
                     )
+                    // Handles straddle both edges, half inside and half outside the bar.
+                    val handleSize = Size(
+                        LayoutConst.HANDLE_VISUAL_WIDTH_DP.dp.toPx(),
+                        LayoutConst.HANDLE_VISUAL_HEIGHT_DP.dp.toPx(),
+                    )
+                    val handleTop = (size.height - handleSize.height) / 2
+                    listOf(0f, size.width).forEach { edge ->
+                        drawRoundRect(
+                            color = extendedColors.selectionOutline,
+                            topLeft = Offset(edge - handleSize.width / 2, handleTop),
+                            size = handleSize,
+                            cornerRadius = CornerRadius(handleSize.width / 2),
+                        )
+                    }
                     return@drawBehind
                 }
                 val barLeft = barLeftPx()
                 val side = barLabelSide(barLeft, size.width, axisWidthPx())
-                val labelText = when (side) {
-                    BarLabelSide.EARLIER -> "${LayoutConst.BAR_LABEL_EARLIER_PREFIX}$text"
-                    BarLabelSide.LATER -> "${LayoutConst.BAR_LABEL_LATER_PREFIX}$text"
-                    BarLabelSide.VISIBLE -> text
-                }
-                val labelAxisX = if (side == BarLabelSide.VISIBLE) maxOf(barLeft, 0f) else 0f
-                val layout = textMeasurer.measure(labelText, style)
+                val layout = textMeasurer.measure(barLabelText(text, side), style)
                 val paddingX = LayoutConst.BAR_LABEL_PADDING_HORIZONTAL_DP.dp.toPx()
                 val paddingY = LayoutConst.BAR_LABEL_PADDING_VERTICAL_DP.dp.toPx()
                 val labelSize = Size(layout.size.width + 2 * paddingX, layout.size.height + 2 * paddingY)
                 val labelTopLeft = Offset(
-                    labelAxisX - barLeft + LayoutConst.TICK_LABEL_PADDING_DP.dp.toPx(),
+                    barLabelAxisLeft(barLeft, side, LayoutConst.TICK_LABEL_PADDING_DP.dp.toPx()) - barLeft,
                     (size.height - labelSize.height) / 2,
                 )
                 drawRoundRect(
@@ -113,6 +121,26 @@ internal fun barLabelSide(
     barLeft >= axisWidth -> BarLabelSide.LATER
     else -> BarLabelSide.VISIBLE
 }
+
+/** The label text, with ‹ or › when the whole bar is off screen. */
+internal fun barLabelText(
+    text: String,
+    side: BarLabelSide,
+): String = when (side) {
+    BarLabelSide.EARLIER -> "${LayoutConst.BAR_LABEL_EARLIER_PREFIX}$text"
+    BarLabelSide.LATER -> "${LayoutConst.BAR_LABEL_LATER_PREFIX}$text"
+    BarLabelSide.VISIBLE -> text
+}
+
+/**
+ * Left edge of the label (its backing) in px from the time axis' left edge: sticks to the visible part of a
+ * visible bar, or to the axis' left edge when the bar is off screen.
+ */
+internal fun barLabelAxisLeft(
+    barLeft: Float,
+    side: BarLabelSide,
+    gap: Float,
+): Float = (if (side == BarLabelSide.VISIBLE) maxOf(barLeft, 0f) else 0f) + gap
 
 @ThemePreviews
 @Composable

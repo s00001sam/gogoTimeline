@@ -13,7 +13,7 @@ class LeftPaneWidthTest {
 
     @Test
     fun phoneExpanded() {
-        assertEquals(160.dp, leftPaneWidth(isTablet = false, expanded = true))
+        assertEquals(200.dp, leftPaneWidth(isTablet = false, expanded = true))
     }
 
     @Test
@@ -23,7 +23,7 @@ class LeftPaneWidthTest {
 
     @Test
     fun tabletExpanded() {
-        assertEquals(280.dp, leftPaneWidth(isTablet = true, expanded = true))
+        assertEquals(320.dp, leftPaneWidth(isTablet = true, expanded = true))
     }
 
     @Test
@@ -37,8 +37,8 @@ class LeftPaneWidthTest {
     fun timelineKeepsRoomOnTheSmallestScreens() {
         val smallPhone = 360.dp
         assertEquals(260.dp, smallPhone - leftPaneWidth(isTablet = false, expanded = false))
-        assertEquals(200.dp, smallPhone - leftPaneWidth(isTablet = false, expanded = true))
+        assertEquals(160.dp, smallPhone - leftPaneWidth(isTablet = false, expanded = true))
         val narrowestTablet = 600.dp
-        assertEquals(320.dp, narrowestTablet - leftPaneWidth(isTablet = true, expanded = true))
+        assertEquals(280.dp, narrowestTablet - leftPaneWidth(isTablet = true, expanded = true))
     }
 }

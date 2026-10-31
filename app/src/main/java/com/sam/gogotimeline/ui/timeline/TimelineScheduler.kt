@@ -1,28 +1,42 @@
 package com.sam.gogotimeline.ui.timeline
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.TimeConst
 import com.sam.gogotimeline.core.time.CalendarContext
+import com.sam.gogotimeline.core.time.SnapInterval
 import com.sam.gogotimeline.core.time.TaskTimeFormat
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeUnit
@@ -38,11 +52,12 @@ import kotlin.math.roundToInt
 
 /**
  * The scheduler: a fixed corner, a header pinned to the top, a left pane, and task bars, laid out here
- * instead of with built-in scrolling. Only visible rows (plus a buffer) are composed; scrolling re-places
- * them, and recomposition happens only when the visible row range changes.
+ * instead of with built-in scrolling. Only visible rows (plus a buffer, plus a dragged row) are composed;
+ * scrolling re-places them. It never changes task data itself: taps and drags are reported through
+ * [callbacks], and the owner passes the updated tasks back in.
  *
  * Z-order, bottom to top: grid → bars → "now" line → left pane background → left pane rows → header →
- * corner → empty state.
+ * corner → drag time label → empty state. A dragged row is drawn last within its layer.
  */
 @Composable
 fun TimelineScheduler(
@@ -55,13 +70,14 @@ fun TimelineScheduler(
     onToggleLeftPane: () -> Unit,
     rowHeight: Dp = LayoutConst.ROW_HEIGHT_DEFAULT_DP.dp,
     selectedTaskId: Long? = null,
+    snapIntervals: Map<TimeUnit, SnapInterval> = DefaultSnapIntervals,
     widthMultiplier: Float = TimeConst.WIDTH_MULTIPLIER_DEFAULT,
+    callbacks: TimelineCallbacks = TimelineCallbacks(),
     onZoomChange: (ZoomLevel) -> Unit = {},
     onNewTask: () -> Unit = {},
 ) {
     LaunchedEffect(calendar) { state.calendar = calendar }
     LaunchedEffect(widthMultiplier) { state.widthMultiplier = widthMultiplier }
-    val currentOnZoomChange = rememberUpdatedState(onZoomChange)
     val now = rememberNow()
     // Only the date matters for "is this year", so bar labels do not recompose every minute.
     val today by remember(calendar) { derivedStateOf { calendar.startOfDay(calendar.localDate(now.value)) } }
@@ -72,22 +88,78 @@ fun TimelineScheduler(
     val extendedColors = GogoTimelineTheme.extendedColors
     val topStyle = styles.tickTop.copy(color = colorScheme.onSurface)
     val bottomStyle = styles.tickBottom.copy(color = colorScheme.onSurfaceVariant)
-    val visibleRows by remember(state) { derivedStateOf { state.visibleRowRange() } }
-    val visibleTasks = visibleRows.mapNotNull { index -> tasks.getOrNull(index)?.let { index to it } }
+    val dragLabelStyle = styles.barText.copy(color = colorScheme.surface)
     val headerHeight = (LayoutConst.HEADER_TOP_TIER_HEIGHT_DP + LayoutConst.HEADER_BOTTOM_TIER_HEIGHT_DP).dp
+
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val localDensity = LocalDensity.current
+    val interaction = remember(state) { TimelineInteraction(state, scope) }
+    val barTextOf: (TimelineTask) -> String = { task ->
+        TaskTimeFormat.barText(TimeRange(task.start, task.end), task.isAllDay, today, calendar)
+    }
+    val currentOnZoomChange by rememberUpdatedState(onZoomChange)
+    interaction.update(
+        tasks = tasks,
+        selectedTaskId = selectedTaskId,
+        snap = snapIntervals[state.unit] ?: SnapInterval.default(state.unit),
+        sizes = with(localDensity) {
+            InteractionSizes(
+                headerHeight = headerHeight.toPx(),
+                rowHeight = rowHeight.toPx(),
+                handleOutside = LayoutConst.HANDLE_OUTSIDE_DP.dp.toPx(),
+                handleInside = LayoutConst.HANDLE_INSIDE_DP.dp.toPx(),
+                labelGap = LayoutConst.TICK_LABEL_PADDING_DP.dp.toPx(),
+                labelPaddingX = LayoutConst.BAR_LABEL_PADDING_HORIZONTAL_DP.dp.toPx(),
+                scrollToTaskMargin = LayoutConst.SCROLL_TO_TASK_MARGIN_DP.dp.toPx(),
+            )
+        },
+        callbacks = callbacks.copy(onZoomEnd = { currentOnZoomChange(state.zoomLevel) }),
+        labelText = barTextOf,
+        labelWidth = { textMeasurer.measure(it, styles.barText).size.width.toFloat() },
+        haptic = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
+    )
+    SideEffect { interaction.clearReleasedIfApplied() }
+    val gestureHandler = rememberUpdatedState<TimelineGestureHandler>(interaction)
+
+    val drag = interaction.drag
+    val dragging = drag != null
+    LaunchedEffect(dragging) {
+        if (dragging) {
+            with(localDensity) {
+                interaction.autoScroll(
+                    zone = LayoutConst.EDGE_AUTO_SCROLL_ZONE_DP.dp.toPx(),
+                    maxSpeed = LayoutConst.MAX_AUTO_SCROLL_SPEED_DP_PER_SECOND.dp.toPx(),
+                )
+            }
+        }
+    }
+
+    val visibleRows by remember(state) { derivedStateOf { state.visibleRowRange() } }
+    // The dragged row stays composed even when it leaves the visible range.
+    val rowIndices = (visibleRows.toList() + listOfNotNull(drag?.originalIndex))
+        .distinct()
+        .filter { it in tasks.indices }
+        .sortedBy { it == drag?.originalIndex }
+    val reorderTarget = interaction.reorderTarget()
+    val shownTasks = rowIndices.associateWith { index ->
+        val task = tasks[index]
+        val range = interaction.displayRange(task)
+        task.copy(start = range.start, end = range.end)
+    }
+    val rowPx = with(localDensity) { rowHeight.toPx() }
 
     Layout(
         modifier = modifier
             .background(colorScheme.background)
             .clipToBounds()
-            .timelineGestures(state, currentOnZoomChange),
+            .timelineGestures(state, gestureHandler),
         contents = listOf(
             {
                 Canvas(Modifier.clipToBounds()) {
                     val scale = state.scale()
                     val ticks = tickCache.ticks(scale.visibleTimeRange(), state.unit, state.dpPerUnit, state.calendar)
                     drawGridLines(ticks, scale, extendedColors.gridMinor, extendedColors.gridMajor)
-                    val rowPx = rowHeight.toPx()
                     val stroke = LayoutConst.GRID_LINE_WIDTH_DP.dp.toPx()
                     visibleRows.forEach { index ->
                         val y = (index + 1) * rowPx - state.scrollY
@@ -96,14 +168,17 @@ fun TimelineScheduler(
                 }
             },
             {
-                visibleTasks.forEach { (index, task) ->
+                rowIndices.forEach { index ->
+                    val task = shownTasks.getValue(index)
                     key(task.id) {
+                        val offset = rowOffsetPx(index, drag, reorderTarget, rowPx, interaction)
                         TaskBar(
-                            modifier = Modifier.layoutId(index),
+                            modifier = Modifier
+                                .layoutId(index)
+                                .offset { IntOffset(0, offset.roundToInt()) }
+                                .then(if (drag?.originalIndex == index) Modifier.lifted() else Modifier),
                             task = task,
-                            text = remember(task, today, calendar) {
-                                TaskTimeFormat.barText(TimeRange(task.start, task.end), task.isAllDay, today, calendar)
-                            },
+                            text = barTextOf(task),
                             selected = task.id == selectedTaskId,
                             textMeasurer = textMeasurer,
                             style = styles.barText,
@@ -120,15 +195,29 @@ fun TimelineScheduler(
             },
             { LeftPaneBackground() },
             {
-                visibleTasks.forEach { (index, task) ->
+                rowIndices.forEach { index ->
+                    val task = shownTasks.getValue(index)
                     key(task.id) {
+                        val offset = rowOffsetPx(index, drag, reorderTarget, rowPx, interaction)
                         LeftPaneRow(
-                            modifier = Modifier.layoutId(index),
+                            modifier = Modifier
+                                .layoutId(index)
+                                .offset { IntOffset(0, offset.roundToInt()) }
+                                .then(if (drag?.originalIndex == index) Modifier.lifted() else Modifier),
                             title = task.title,
                             styles = styles,
                             selected = task.id == selectedTaskId,
                         )
                     }
+                }
+            },
+            {
+                Canvas(Modifier.clipToBounds()) {
+                    drawRect(colorScheme.background)
+                    val scale = state.scale()
+                    val ticks = tickCache.ticks(scale.visibleTimeRange(), state.unit, state.dpPerUnit, state.calendar)
+                    drawHeader(ticks, scale, textMeasurer, topStyle, bottomStyle, extendedColors.gridMajor)
+                    drawNowDot(scale.timeToX(now.value), extendedColors.nowLine)
                 }
             },
             {
@@ -139,11 +228,29 @@ fun TimelineScheduler(
             },
             {
                 Canvas(Modifier.clipToBounds()) {
-                    drawRect(colorScheme.background)
-                    val scale = state.scale()
-                    val ticks = tickCache.ticks(scale.visibleTimeRange(), state.unit, state.dpPerUnit, state.calendar)
-                    drawHeader(ticks, scale, textMeasurer, topStyle, bottomStyle, extendedColors.gridMajor)
-                    drawNowDot(scale.timeToX(now.value), extendedColors.nowLine)
+                    val session = interaction.drag ?: return@Canvas
+                    val preview = interaction.previewRange() ?: return@Canvas
+                    val layout = textMeasurer.measure(
+                        session.dragTimeLabel(preview, interaction.grid(), state.calendar),
+                        dragLabelStyle,
+                    )
+                    val paddingX = LayoutConst.TIME_LABEL_PADDING_HORIZONTAL_DP.dp.toPx()
+                    val paddingY = LayoutConst.TIME_LABEL_PADDING_VERTICAL_DP.dp.toPx()
+                    val gap = LayoutConst.TIME_LABEL_GAP_DP.dp.toPx()
+                    val labelSize = Size(layout.size.width + 2 * paddingX, layout.size.height + 2 * paddingY)
+                    val barPadding = LayoutConst.BAR_VERTICAL_PADDING_DP.dp.toPx()
+                    val barTop = session.originalIndex * rowPx - state.scrollY + barPadding
+                    val above = barTop - gap - labelSize.height
+                    val top = if (above >= 0f) above else barTop + rowPx - 2 * barPadding + gap
+                    val left = (interaction.pointer.x - state.axisLeftPx - labelSize.width / 2)
+                        .coerceIn(0f, (size.width - labelSize.width).coerceAtLeast(0f))
+                    drawRoundRect(
+                        color = colorScheme.onSurface,
+                        topLeft = Offset(left, top),
+                        size = labelSize,
+                        cornerRadius = CornerRadius(LayoutConst.TIME_LABEL_CORNER_DP.dp.toPx()),
+                    )
+                    drawText(layout, topLeft = Offset(left + paddingX, top + paddingY))
                 }
             },
             { if (tasks.isEmpty()) EmptyState(onNewTask = onNewTask) },
@@ -155,7 +262,6 @@ fun TimelineScheduler(
         val top = headerHeight.roundToPx().coerceAtMost(height)
         val axisWidth = width - left
         val bodyHeight = height - top
-        val rowPx = rowHeight.toPx()
         state.updateLayout(
             density = density,
             axisLeftPx = left.toFloat(),
@@ -169,19 +275,21 @@ fun TimelineScheduler(
         val barPadding = LayoutConst.BAR_VERTICAL_PADDING_DP.dp.toPx()
         val barHeight = (rowPx - 2 * barPadding).roundToInt().coerceAtLeast(0)
         val bars = measurables[1].map { measurable ->
-            val task = tasks[measurable.layoutId as Int]
+            val index = measurable.layoutId as Int
+            val task = shownTasks.getValue(index)
             val barLeft = barLeftPx(state, task)
-            val barRight = minOf(state.timeToX(task.end.toDouble()), axisWidth * BAR_CLIP_WIDTHS)
+            val barRight = minOf(state.timeToX(task.end.toDouble()), axisWidth * LayoutConst.BAR_CLIP_WIDTHS)
             val barWidth = (barRight - barLeft).roundToInt().coerceAtLeast(1)
-            Triple(measurable.layoutId as Int, barLeft, measurable.measure(Constraints.fixed(barWidth, barHeight)))
+            Triple(index, barLeft, measurable.measure(Constraints.fixed(barWidth, barHeight)))
         }
         val nowLine = measurables[2].first().measure(bodyConstraints)
         val paneBackground = measurables[3].first().measure(Constraints.fixed(left, bodyHeight))
         val rowConstraints = Constraints.fixed(left, rowPx.roundToInt())
         val rows = measurables[4].map { (it.layoutId as Int) to it.measure(rowConstraints) }
-        val corner = measurables[5].first().measure(Constraints.fixed(left, top))
-        val header = measurables[6].first().measure(Constraints.fixed(axisWidth, top))
-        val empty = measurables[7].firstOrNull()?.measure(Constraints(maxWidth = axisWidth, maxHeight = bodyHeight))
+        val header = measurables[5].first().measure(Constraints.fixed(axisWidth, top))
+        val corner = measurables[6].first().measure(Constraints.fixed(left, top))
+        val dragLabel = measurables[7].first().measure(bodyConstraints)
+        val empty = measurables[8].firstOrNull()?.measure(Constraints(maxWidth = axisWidth, maxHeight = bodyHeight))
 
         layout(width, height) {
             fun rowTop(index: Int): Float = top + index * rowPx - state.scrollY
@@ -195,14 +303,15 @@ fun TimelineScheduler(
             // The corner goes above the header so nothing from the header can show over it.
             header.place(left, 0)
             corner.place(0, 0)
+            dragLabel.place(left, top)
             empty?.place(left + (axisWidth - empty.width) / 2, top + (bodyHeight - empty.height) / 2)
         }
     }
 }
 
-// Very long bars are cut to one viewport width beyond each side, so a year-long bar at Hour zoom stays
-// within Compose's size limits.
-private const val BAR_CLIP_WIDTHS = 2f
+private val DefaultSnapIntervals: Map<TimeUnit, SnapInterval> = TimeUnit.entries.associateWith {
+    SnapInterval.default(it)
+}
 
 private const val TEXT_MEASURER_CACHE_SIZE = 64
 
@@ -210,6 +319,43 @@ private fun barLeftPx(
     state: TimelineState,
     task: TimelineTask,
 ): Float = maxOf(state.timeToX(task.start.toDouble()), -state.viewportWidthPx)
+
+/**
+ * Vertical offset of a row while reordering: the dragged row follows the finger, rows passed slide one slot
+ * with a short animation, and everything snaps back to 0 the moment the drag ends so the new order never
+ * shows a stale offset.
+ */
+@Composable
+private fun rowOffsetPx(
+    index: Int,
+    drag: DragSession?,
+    reorderTarget: Int?,
+    rowPx: Float,
+    interaction: TimelineInteraction,
+): Float {
+    val shift = remember { Animatable(0f) }
+    val target = if (drag != null && reorderTarget != null) {
+        reorderShift(index, drag.originalIndex, reorderTarget) * rowPx
+    } else {
+        0f
+    }
+    LaunchedEffect(target, drag != null) {
+        if (drag !=
+            null
+        ) {
+            shift.animateTo(target, tween(LayoutConst.REORDER_SHIFT_ANIMATION_MILLIS))
+        } else {
+            shift.snapTo(0f)
+        }
+    }
+    return when {
+        drag == null || reorderTarget == null -> 0f
+        drag.originalIndex == index -> interaction.draggedRowOffset()
+        else -> shift.value
+    }
+}
+
+private fun Modifier.lifted(): Modifier = shadow(LayoutConst.DRAG_ELEVATION_DP.dp)
 
 private val PreviewCalendar = CalendarContext(ZoneId.of("Asia/Taipei"), DayOfWeek.SUNDAY)
 
@@ -262,6 +408,10 @@ private fun MonthPreview() = SchedulerPreview(TimeUnit.MONTH)
 @ThemePreviews
 @Composable
 private fun ExpandedLeftPanePreview() = SchedulerPreview(expanded = true)
+
+@ThemePreviews
+@Composable
+private fun SelectedTaskPreview() = SchedulerPreview(TimeUnit.HOUR, selectedTaskId = 1L)
 
 @ThemePreviews
 @Composable

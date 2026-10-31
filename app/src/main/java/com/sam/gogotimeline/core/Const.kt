@@ -91,11 +91,37 @@ object LayoutConst {
 
     // Left pane
     const val NAME_COLUMN_PHONE_COLLAPSED_DP = 100f
-    const val NAME_COLUMN_PHONE_EXPANDED_DP = 160f
+    const val NAME_COLUMN_PHONE_EXPANDED_DP = 200f
     const val NAME_COLUMN_TABLET_COLLAPSED_DP = 180f
-    const val NAME_COLUMN_TABLET_EXPANDED_DP = 280f
+    const val NAME_COLUMN_TABLET_EXPANDED_DP = 320f
     const val LEFT_PANE_PADDING_DP = 8f
     const val NAME_MAX_LINES = 2
+    const val LEFT_PANE_ANIMATION_MILLIS = 300
+    const val CORNER_ARROW_EXPANDED_ROTATION_DEGREES = 180f
+
+    // Very long bars are cut to one viewport width beyond each side, so a year-long bar at Hour zoom stays
+    // within Compose's size limits.
+    const val BAR_CLIP_WIDTHS = 2f
+
+    // On short bars the inward part of each handle shrinks so a move area always stays in the middle.
+    const val HANDLE_INSIDE_MAX_FRACTION = 1f / 3
+    const val HANDLE_VISUAL_WIDTH_DP = 4f
+    const val HANDLE_VISUAL_HEIGHT_DP = 16f
+
+    // Tapping an off-screen task scrolls its start to this distance from the time axis' left edge.
+    const val SCROLL_TO_TASK_MARGIN_DP = 24f
+
+    // Time label near the finger while dragging.
+    const val TIME_LABEL_GAP_DP = 8f
+    const val TIME_LABEL_CORNER_DP = 4f
+    const val TIME_LABEL_PADDING_HORIZONTAL_DP = 6f
+    const val TIME_LABEL_PADDING_VERTICAL_DP = 3f
+
+    // Shadow under the row lifted while reordering.
+    const val DRAG_ELEVATION_DP = 6f
+
+    // Rows passed while reordering slide into the free slot; short so they never lag behind the finger.
+    const val REORDER_SHIFT_ANIMATION_MILLIS = 150
 
     const val EMPTY_STATE_ICON_DP = 48f
     const val EMPTY_STATE_SPACING_DP = 16f

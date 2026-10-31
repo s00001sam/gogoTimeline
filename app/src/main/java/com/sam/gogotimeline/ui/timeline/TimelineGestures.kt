@@ -14,70 +14,170 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.Velocity
 import com.sam.gogotimeline.core.gesture.DragDirection
 import com.sam.gogotimeline.core.gesture.GestureMath
-import com.sam.gogotimeline.core.time.ZoomLevel
+import com.sam.gogotimeline.core.gesture.HitTarget
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
+/** What each gesture means is decided by the scheduler; this file only recognizes which gesture happened. */
+internal interface TimelineGestureHandler {
+    fun hitTest(position: Offset): HitTarget
+
+    /** Anywhere in the selected task's row can be long-pressed. */
+    fun canLongPress(target: HitTarget): Boolean
+
+    fun onLongPress()
+
+    fun onTap(target: HitTarget)
+
+    fun onDragStart(
+        target: HitTarget,
+        kind: DragKind,
+        downPosition: Offset,
+    )
+
+    fun onDrag(position: Offset)
+
+    fun onDragEnd()
+
+    fun onDragCancel()
+
+    fun onZoomEnd()
+}
+
 /**
- * All timeline gestures in one place so they never compete.
- * - One finger: locks to one direction past touch slop, scrolls along it, and flings on release.
- * - Two fingers: zoom around their midpoint and pan with them. Once a pinch starts, a remaining single
- *   finger does nothing; [onZoomChange] is reported once after all fingers lift.
+ * All timeline gestures in one place so they never compete (spec 13.2 C).
+ * - Handles drag right away. Anywhere in the selected task's row starts a drag only after a long press
+ *   (system timeout, no movement past touch slop); moving past slop first cancels the long press.
+ * - After a long press the drag locks: vertical reorders the row; horizontal moves the time only when the
+ *   long press was on the bar itself. Anything else scrolls in the locked direction and flings on release.
+ * - Two fingers zoom and pan, except while dragging a task. A remaining single finger after a pinch does
+ *   nothing until all fingers lift.
+ * - Releasing without moving past slop and without a long press is a tap.
  */
 internal fun Modifier.timelineGestures(
     state: TimelineState,
-    onZoomChange: State<(ZoomLevel) -> Unit>,
+    handler: State<TimelineGestureHandler>,
 ): Modifier = pointerInput(state) {
     coroutineScope {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             launch { state.stopAnimation() }
+            val callbacks = handler.value
+            val target = callbacks.hitTest(down.position)
+            val isHandle = target is HitTarget.StartHandle || target is HitTarget.EndHandle
+            val canLongPress = callbacks.canLongPress(target)
+            val longPressDeadline = down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
             val tracker = VelocityTracker()
             tracker.addPosition(down.uptimeMillis, down.position)
+            var lastUptime = down.uptimeMillis
+            var longPressed = false
+            var dragging = false
+            var ignoreRest = false
+            var pinched = false
             var direction: DragDirection? = null
             var totalMove = Offset.Zero
-            var pinched = false
 
-            while (true) {
-                val event = awaitPointerEvent()
-                val pressedCount = event.changes.count { it.pressed }
-                if (pressedCount == 0) break
-                if (pressedCount >= 2) {
-                    pinched = true
-                    val pan = event.calculatePan()
-                    state.scrollBy(pan.x, pan.y)
-                    state.zoomBy(event.calculateZoom(), event.calculateCentroid().x - state.axisLeftPx)
-                    event.changes.forEach { it.consume() }
-                    continue
-                }
-                if (pinched) continue
+            try {
+                while (true) {
+                    val waitingForLongPress = canLongPress && !longPressed && direction == null && !pinched
+                    val event = if (waitingForLongPress) {
+                        withTimeoutOrNull(longPressDeadline - lastUptime) { awaitPointerEvent() }
+                    } else {
+                        awaitPointerEvent()
+                    }
+                    if (event == null) {
+                        longPressed = true
+                        callbacks.onLongPress()
+                        continue
+                    }
+                    val pressedCount = event.changes.count { it.pressed }
+                    if (pressedCount == 0) break
+                    if (pressedCount >= 2) {
+                        // A second finger is ignored while a task is being dragged.
+                        if (!dragging) {
+                            pinched = true
+                            val pan = event.calculatePan()
+                            state.scrollBy(pan.x, pan.y)
+                            state.zoomBy(event.calculateZoom(), event.calculateCentroid().x - state.axisLeftPx)
+                        }
+                        event.changes.forEach { it.consume() }
+                        continue
+                    }
+                    if (pinched) continue
 
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                tracker.addPosition(change.uptimeMillis, change.position)
-                val delta = change.positionChange()
-                if (direction == null) {
-                    totalMove += delta
-                    direction = GestureMath.lockDirection(totalMove.x, totalMove.y, viewConfiguration.touchSlop)
-                        ?: continue
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    lastUptime = change.uptimeMillis
+                    tracker.addPosition(change.uptimeMillis, change.position)
+                    if (dragging) {
+                        callbacks.onDrag(change.position)
+                        change.consume()
+                        continue
+                    }
+                    if (ignoreRest) continue
+                    val delta = change.positionChange()
+                    val locked = direction ?: run {
+                        totalMove += delta
+                        GestureMath.lockDirection(totalMove.x, totalMove.y, viewConfiguration.touchSlop)
+                    } ?: continue
+                    if (direction == null) {
+                        direction = locked
+                        val kind = dragKind(target, isHandle, longPressed, locked)
+                        if (kind != null) {
+                            dragging = true
+                            callbacks.onDragStart(target, kind, down.position)
+                            callbacks.onDrag(change.position)
+                            change.consume()
+                            continue
+                        }
+                        if (longPressed) {
+                            // After a long press off the bar, a horizontal drag does nothing.
+                            ignoreRest = true
+                            continue
+                        }
+                    }
+                    when (locked) {
+                        DragDirection.HORIZONTAL -> state.scrollBy(delta.x, 0f)
+                        DragDirection.VERTICAL -> state.scrollBy(0f, delta.y)
+                    }
+                    change.consume()
                 }
-                when (direction) {
-                    DragDirection.HORIZONTAL -> state.scrollBy(delta.x, 0f)
-                    DragDirection.VERTICAL -> state.scrollBy(0f, delta.y)
-                }
-                change.consume()
+            } catch (cancelled: CancellationException) {
+                if (dragging) callbacks.onDragCancel()
+                throw cancelled
             }
 
-            if (pinched) {
-                onZoomChange.value(state.zoomLevel)
-                return@awaitEachGesture
+            val locked = direction
+            when {
+                dragging -> callbacks.onDragEnd()
+
+                pinched -> callbacks.onZoomEnd()
+
+                locked == null && !longPressed -> callbacks.onTap(target)
+
+                locked != null && !longPressed && !isHandle -> {
+                    val velocity = tracker.calculateVelocity()
+                    val flingVelocity = when (locked) {
+                        DragDirection.HORIZONTAL -> Velocity(velocity.x, 0f)
+                        DragDirection.VERTICAL -> Velocity(0f, velocity.y)
+                    }
+                    launch { state.fling(flingVelocity) }
+                }
             }
-            val locked = direction ?: return@awaitEachGesture
-            val velocity = tracker.calculateVelocity()
-            val flingVelocity = when (locked) {
-                DragDirection.HORIZONTAL -> Velocity(velocity.x, 0f)
-                DragDirection.VERTICAL -> Velocity(0f, velocity.y)
-            }
-            launch { state.fling(flingVelocity) }
         }
     }
+}
+
+private fun dragKind(
+    target: HitTarget,
+    isHandle: Boolean,
+    longPressed: Boolean,
+    direction: DragDirection,
+): DragKind? = when {
+    isHandle && target is HitTarget.StartHandle -> DragKind.RESIZE_START
+    isHandle -> DragKind.RESIZE_END
+    !longPressed -> null
+    direction == DragDirection.VERTICAL -> DragKind.REORDER
+    target is HitTarget.BarBody -> DragKind.MOVE
+    else -> null
 }
