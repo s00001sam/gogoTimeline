@@ -1,6 +1,7 @@
 package com.sam.gogotimeline.ui.timeline
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -13,20 +14,26 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
@@ -35,6 +42,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.TimeConst
+import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.SnapInterval
 import com.sam.gogotimeline.core.time.TaskTimeFormat
@@ -49,6 +57,7 @@ import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * The scheduler: a fixed corner, a header pinned to the top, a left pane, and task bars, laid out here
@@ -135,15 +144,32 @@ fun TimelineScheduler(
         }
     }
 
+    val rowTasks = interaction.rowTasks()
     val visibleRows by remember(state) { derivedStateOf { state.visibleRowRange() } }
+    // Composing a row costs far more than drawing ticks, so rows up to a page away are prepared one per frame
+    // before they scroll in; the loop stops once the page is filled.
+    var preparedRows by remember(state) { mutableStateOf(IntRange.EMPTY) }
+    val rowCount by rememberUpdatedState(rowTasks.size)
+    LaunchedEffect(state) {
+        snapshotFlow { visibleRows to rowCount }.collectLatest { (visible, count) ->
+            val target = GestureMath.preparedRowRange(visible, count)
+            while (true) {
+                val next = GestureMath.nextPreparedRows(preparedRows, visible, target)
+                if (next == preparedRows) break
+                preparedRows = next
+                withFrameNanos {}
+            }
+        }
+    }
+    val composedRows by remember(state) { derivedStateOf { GestureMath.composedRows(visibleRows, preparedRows) } }
     // The dragged row stays composed even when it leaves the visible range.
-    val rowIndices = (visibleRows.toList() + listOfNotNull(drag?.originalIndex))
+    val rowIndices = (composedRows.toList() + listOfNotNull(drag?.originalIndex))
         .distinct()
-        .filter { it in tasks.indices }
+        .filter { it in rowTasks.indices }
         .sortedBy { it == drag?.originalIndex }
     val reorderTarget = interaction.reorderTarget()
     val shownTasks = rowIndices.associateWith { index ->
-        val task = tasks[index]
+        val task = rowTasks[index]
         val range = interaction.displayRange(task)
         task.copy(start = range.start, end = range.end)
     }
@@ -171,19 +197,21 @@ fun TimelineScheduler(
                 rowIndices.forEach { index ->
                     val task = shownTasks.getValue(index)
                     key(task.id) {
-                        val offset = rowOffsetPx(index, drag, reorderTarget, rowPx, interaction)
-                        TaskBar(
-                            modifier = Modifier
-                                .layoutId(index)
-                                .offset { IntOffset(0, offset.roundToInt()) }
-                                .then(if (drag?.originalIndex == index) Modifier.lifted() else Modifier),
+                        ScheduledBar(
+                            modifier = Modifier.layoutId(index),
                             task = task,
-                            text = barTextOf(task),
+                            index = index,
                             selected = task.id == selectedTaskId,
+                            lifted = task.id == interaction.liftedTaskId,
+                            today = today,
+                            calendar = calendar,
+                            drag = drag,
+                            reorderTarget = reorderTarget,
+                            rowPx = rowPx,
+                            interaction = interaction,
+                            state = state,
                             textMeasurer = textMeasurer,
                             style = styles.barText,
-                            barLeftPx = { barLeftPx(state, task) },
-                            axisWidthPx = { state.viewportWidthPx },
                         )
                     }
                 }
@@ -198,15 +226,17 @@ fun TimelineScheduler(
                 rowIndices.forEach { index ->
                     val task = shownTasks.getValue(index)
                     key(task.id) {
-                        val offset = rowOffsetPx(index, drag, reorderTarget, rowPx, interaction)
-                        LeftPaneRow(
-                            modifier = Modifier
-                                .layoutId(index)
-                                .offset { IntOffset(0, offset.roundToInt()) }
-                                .then(if (drag?.originalIndex == index) Modifier.lifted() else Modifier),
+                        ScheduledName(
+                            modifier = Modifier.layoutId(index),
                             title = task.title,
-                            styles = styles,
+                            index = index,
                             selected = task.id == selectedTaskId,
+                            lifted = task.id == interaction.liftedTaskId,
+                            drag = drag,
+                            reorderTarget = reorderTarget,
+                            rowPx = rowPx,
+                            interaction = interaction,
+                            styles = styles,
                         )
                     }
                 }
@@ -321,6 +351,70 @@ private fun barLeftPx(
 ): Float = maxOf(state.timeToX(task.start.toDouble()), -state.viewportWidthPx)
 
 /**
+ * One row's bar. Its own restart scope with inputs that do not change while scrolling, so crossing a row
+ * composes only the row that appears instead of redoing every visible row.
+ */
+@Composable
+private fun ScheduledBar(
+    modifier: Modifier = Modifier,
+    task: TimelineTask,
+    index: Int,
+    selected: Boolean,
+    lifted: Boolean,
+    today: Long,
+    calendar: CalendarContext,
+    drag: DragSession?,
+    reorderTarget: Int?,
+    rowPx: Float,
+    interaction: TimelineInteraction,
+    state: TimelineState,
+    textMeasurer: TextMeasurer,
+    style: TextStyle,
+) {
+    val offset = rowOffsetPx(index, drag, reorderTarget, rowPx, interaction)
+    val text = remember(task, today, calendar) {
+        TaskTimeFormat.barText(TimeRange(task.start, task.end), task.isAllDay, today, calendar)
+    }
+    TaskBar(
+        modifier = modifier
+            .offset { IntOffset(0, offset.roundToInt()) }
+            .lifted(lifted),
+        task = task,
+        text = text,
+        selected = selected,
+        textMeasurer = textMeasurer,
+        style = style,
+        barLeftPx = { barLeftPx(state, task) },
+        axisWidthPx = { state.viewportWidthPx },
+    )
+}
+
+/** One row's name in the left pane, skipped while scrolling for the same reason as [ScheduledBar]. */
+@Composable
+private fun ScheduledName(
+    modifier: Modifier = Modifier,
+    title: String,
+    index: Int,
+    selected: Boolean,
+    lifted: Boolean,
+    drag: DragSession?,
+    reorderTarget: Int?,
+    rowPx: Float,
+    interaction: TimelineInteraction,
+    styles: TimelineTextStyles,
+) {
+    val offset = rowOffsetPx(index, drag, reorderTarget, rowPx, interaction)
+    LeftPaneRow(
+        modifier = modifier
+            .offset { IntOffset(0, offset.roundToInt()) }
+            .lifted(lifted),
+        title = title,
+        styles = styles,
+        selected = selected,
+    )
+}
+
+/**
  * Vertical offset of a row while reordering: the dragged row follows the finger, rows passed slide one slot
  * with a short animation, and everything snaps back to 0 the moment the drag ends so the new order never
  * shows a stale offset.
@@ -355,7 +449,21 @@ private fun rowOffsetPx(
     }
 }
 
-private fun Modifier.lifted(): Modifier = shadow(LayoutConst.DRAG_ELEVATION_DP.dp)
+/** Lifts a long-pressed row: scales up a little with a shadow, so it reads as picked up even without haptics. */
+@Composable
+private fun Modifier.lifted(lifted: Boolean): Modifier {
+    val scale by animateFloatAsState(
+        targetValue = if (lifted) LayoutConst.LONG_PRESS_LIFT_SCALE else 1f,
+        animationSpec = tween(LayoutConst.LONG_PRESS_LIFT_ANIMATION_MILLIS),
+        label = "lift",
+    )
+    val elevation = with(LocalDensity.current) { LayoutConst.DRAG_ELEVATION_DP.dp.toPx() }
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+        shadowElevation = elevation * (scale - 1f) / (LayoutConst.LONG_PRESS_LIFT_SCALE - 1f)
+    }
+}
 
 private val PreviewCalendar = CalendarContext(ZoneId.of("Asia/Taipei"), DayOfWeek.SUNDAY)
 

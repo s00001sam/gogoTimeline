@@ -61,8 +61,15 @@ internal class TimelineInteraction(
     var pointer by mutableStateOf(Offset.Zero)
         private set
 
+    /** The row lifted by a long press, from the moment it succeeds until the finger lifts. */
+    var liftedTaskId by mutableStateOf<Long?>(null)
+        private set
+
     // Kept after release until the new times come back in the tasks, so the bar never flashes back for a frame.
     private var released by mutableStateOf<Pair<Long, TimeRange>?>(null)
+
+    // The same for a reorder: task id to its new row, kept until the new order comes back.
+    private var releasedMove by mutableStateOf<Pair<Long, Int>?>(null)
 
     fun update(
         tasks: List<TimelineTask>,
@@ -84,11 +91,23 @@ internal class TimelineInteraction(
         this.haptic = haptic
     }
 
-    /** Call after new tasks arrive: drops the kept preview once the owner has the new times. */
+    /** Call after new tasks arrive: drops the kept times or order once the owner has them (or the task is gone). */
     fun clearReleasedIfApplied() {
-        val (id, range) = released ?: return
-        val task = tasks.firstOrNull { it.id == id }
-        if (task == null || (task.start == range.start && task.end == range.end)) released = null
+        released?.let { (id, range) ->
+            val task = tasks.firstOrNull { it.id == id }
+            if (task == null || (task.start == range.start && task.end == range.end)) released = null
+        }
+        releasedMove?.let { (id, to) ->
+            val index = tasks.indexOfFirst { it.id == id }
+            if (index < 0 || index == to) releasedMove = null
+        }
+    }
+
+    /** Row order to draw and hit-test: the dropped order until the owner's tasks catch up. */
+    fun rowTasks(): List<TimelineTask> {
+        val (id, to) = releasedMove ?: return tasks
+        val from = tasks.indexOfFirst { it.id == id }
+        return if (from < 0) tasks else GestureMath.moveItem(tasks, from, to)
     }
 
     fun grid(): TimeGrid = state.calendar.grid(snap)
@@ -120,7 +139,7 @@ internal class TimelineInteraction(
 
     override fun hitTest(position: Offset): HitTarget {
         val axisWidth = state.viewportWidthPx
-        val rows = tasks.map { task ->
+        val rows = rowTasks().map { task ->
             val barLeft = state.timeToX(task.start.toDouble())
             val barRight = state.timeToX(task.end.toDouble())
             if (task.id == selectedTaskId) {
@@ -146,9 +165,20 @@ internal class TimelineInteraction(
         return HitTest.hitTest(position.x, position.y, layout, rows, selectedTaskId)
     }
 
-    override fun canLongPress(target: HitTarget): Boolean = rowTaskId(target)?.let { it == selectedTaskId } ?: false
+    // Any task row can be long-pressed to reorder; no selection needed.
+    override fun canLongPress(target: HitTarget): Boolean = rowTaskId(target) != null
 
-    override fun onLongPress() = haptic()
+    override fun canMoveTime(target: HitTarget): Boolean =
+        target is HitTarget.BarBody && target.taskId == selectedTaskId
+
+    override fun onLongPress(target: HitTarget) {
+        liftedTaskId = rowTaskId(target)
+        haptic()
+    }
+
+    override fun onLongPressEnd() {
+        liftedTaskId = null
+    }
 
     override fun onTap(target: HitTarget) {
         // While editing, any tap on another task only ends editing; tapping again then edits that task.
@@ -159,14 +189,14 @@ internal class TimelineInteraction(
             return
         }
         when (target) {
-            is HitTarget.BarBody -> callbacks.onTaskTap(target.taskId)
+            is HitTarget.BarBody -> tapTask(target.taskId)
 
-            is HitTarget.LeftPaneRow -> tapTaskOutsideBar(target.taskId)
+            is HitTarget.LeftPaneRow -> tapTask(target.taskId)
 
-            is HitTarget.BarLabel -> tapTaskOutsideBar(target.taskId)
+            is HitTarget.BarLabel -> tapTask(target.taskId)
 
             // Blank space in the row being edited does nothing, so a near miss never leaves edit mode.
-            is HitTarget.RowBlank -> if (target.taskId != selectedTaskId) callbacks.onEmptyTap()
+            is HitTarget.RowBlank -> if (target.taskId != selectedTaskId) tapTask(target.taskId)
 
             HitTarget.Empty -> callbacks.onEmptyTap()
 
@@ -207,7 +237,10 @@ internal class TimelineInteraction(
         if (session.kind == DragKind.REORDER) {
             val to = reorderTarget() ?: session.originalIndex
             drag = null
-            if (to != session.originalIndex) callbacks.onTaskMove(session.taskId, to)
+            if (to != session.originalIndex) {
+                releasedMove = session.taskId to to
+                callbacks.onTaskMove(session.taskId, to)
+            }
             return
         }
         val range = previewRange() ?: session.original
@@ -252,14 +285,15 @@ internal class TimelineInteraction(
     }
 
     // A tap on a left-pane row or label edits the task when its bar is visible, otherwise only scrolls to it.
-    private fun tapTaskOutsideBar(taskId: Long) {
+
+    /** A visible bar gets selected (unless already edited); an off-screen one only scrolls into view first. */
+    private fun tapTask(taskId: Long) {
         val task = tasks.firstOrNull { it.id == taskId } ?: return
         val barVisible = state.timeToX(task.end.toDouble()) > 0f &&
             state.timeToX(task.start.toDouble()) < state.viewportWidthPx
-        if (barVisible) {
-            callbacks.onTaskTap(taskId)
-        } else {
-            scope.launch { state.animateTimeToX(task.start.toDouble(), sizes.scrollToTaskMargin) }
+        when {
+            !barVisible -> scope.launch { state.animateTimeToX(task.start.toDouble(), sizes.scrollToTaskMargin) }
+            taskId != selectedTaskId -> callbacks.onTaskTap(taskId)
         }
     }
 

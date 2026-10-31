@@ -118,6 +118,70 @@ class GestureMathTest {
         assertEquals(0f, GestureMath.clampScrollY(100f, 3, ROW, 300f), EPSILON)
     }
 
+    @Test
+    fun longPressIsAHundredMillisShorter() {
+        assertEquals(400L, GestureMath.longPressTimeout(500L))
+    }
+
+    @Test
+    fun shortestSystemSettingLandsOnTheFloor() {
+        assertEquals(300L, GestureMath.longPressTimeout(400L))
+    }
+
+    @Test
+    fun longPressNeverGoesBelowTheFloorAndKeepsLongDelays() {
+        assertEquals(300L, GestureMath.longPressTimeout(350L))
+        assertEquals(1_400L, GestureMath.longPressTimeout(1_500L))
+    }
+
+    private fun fill(
+        visible: IntRange,
+        target: IntRange,
+        from: IntRange = IntRange.EMPTY,
+    ): List<IntRange> = generateSequence(from) { current ->
+        GestureMath.nextPreparedRows(current, visible, target).takeIf { it != current }
+    }.drop(1).toList()
+
+    @Test
+    fun preparesOnePageEachWay() {
+        assertEquals(2..25, GestureMath.preparedRowRange(10..17, rowCount = 100))
+    }
+
+    @Test
+    fun fillsOneRowPerStepAndStops() {
+        val steps = fill(visible = 10..17, target = 2..25)
+        assertEquals(9..17, steps.first())
+        assertEquals(2..25, steps.last())
+        assertEquals(16, steps.size)
+    }
+
+    @Test
+    fun pageNearTheTopStaysWithinTheRows() {
+        assertEquals(0..15, GestureMath.preparedRowRange(0..7, rowCount = 100))
+    }
+
+    @Test
+    fun growsTheSideWithFewerRowsReady() {
+        assertEquals(9..19, GestureMath.nextPreparedRows(10..19, visible = 10..17, target = 2..25))
+    }
+
+    @Test
+    fun jumpComposesOnlyTheVisibleRows() {
+        assertEquals(50..57, GestureMath.composedRows(visible = 50..57, prepared = 2..25))
+        assertEquals(49..57, GestureMath.nextPreparedRows(2..25, visible = 50..57, target = 42..65))
+    }
+
+    @Test
+    fun scrollingDownDropsRowsBeyondTheTarget() {
+        assertEquals(12..28, GestureMath.nextPreparedRows(2..25, visible = 20..27, target = 12..35))
+    }
+
+    @Test
+    fun noRowsPrepareNothing() {
+        assertEquals(IntRange.EMPTY, GestureMath.preparedRowRange(IntRange.EMPTY, rowCount = 0))
+        assertEquals(IntRange.EMPTY, GestureMath.nextPreparedRows(2..25, IntRange.EMPTY, IntRange.EMPTY))
+    }
+
     private companion object {
         const val SLOP = 8f
         const val ROW = 64f

@@ -26,7 +26,11 @@ internal interface TimelineGestureHandler {
     /** Anywhere in the selected task's row can be long-pressed. */
     fun canLongPress(target: HitTarget): Boolean
 
-    fun onLongPress()
+    fun canMoveTime(target: HitTarget): Boolean
+
+    fun onLongPress(target: HitTarget)
+
+    fun onLongPressEnd()
 
     fun onTap(target: HitTarget)
 
@@ -47,10 +51,9 @@ internal interface TimelineGestureHandler {
 
 /**
  * All timeline gestures in one place so they never compete (spec 13.2 C).
- * - Handles drag right away. Anywhere in the selected task's row starts a drag only after a long press
- *   (system timeout, no movement past touch slop); moving past slop first cancels the long press.
- * - After a long press the drag locks: vertical reorders the row; horizontal moves the time only when the
- *   long press was on the bar itself. Anything else scrolls in the locked direction and flings on release.
+ * - Handles drag right away, and so does a horizontal drag on the selected bar (moves the time).
+ * - Any task row reorders after a long press (system timeout, no movement past touch slop) and a vertical drag;
+ *   moving past slop first cancels the long press. Anything else scrolls in the locked direction and flings.
  * - Two fingers zoom and pan, except while dragging a task. A remaining single finger after a pinch does
  *   nothing until all fingers lift.
  * - Releasing without moving past slop and without a long press is a tap.
@@ -67,7 +70,9 @@ internal fun Modifier.timelineGestures(
             val target = callbacks.hitTest(down.position)
             val isHandle = target is HitTarget.StartHandle || target is HitTarget.EndHandle
             val canLongPress = callbacks.canLongPress(target)
-            val longPressDeadline = down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
+            val canMoveTime = callbacks.canMoveTime(target)
+            val longPressDeadline =
+                down.uptimeMillis + GestureMath.longPressTimeout(viewConfiguration.longPressTimeoutMillis)
             val tracker = VelocityTracker()
             tracker.addPosition(down.uptimeMillis, down.position)
             var lastUptime = down.uptimeMillis
@@ -88,7 +93,7 @@ internal fun Modifier.timelineGestures(
                     }
                     if (event == null) {
                         longPressed = true
-                        callbacks.onLongPress()
+                        callbacks.onLongPress(target)
                         continue
                     }
                     val pressedCount = event.changes.count { it.pressed }
@@ -122,7 +127,7 @@ internal fun Modifier.timelineGestures(
                     } ?: continue
                     if (direction == null) {
                         direction = locked
-                        val kind = dragKind(target, isHandle, longPressed, locked)
+                        val kind = dragKind(target, longPressed, canMoveTime, locked)
                         if (kind != null) {
                             dragging = true
                             callbacks.onDragStart(target, kind, down.position)
@@ -131,7 +136,7 @@ internal fun Modifier.timelineGestures(
                             continue
                         }
                         if (longPressed) {
-                            // After a long press off the bar, a horizontal drag does nothing.
+                            // After a long press, a horizontal drag off the selected bar does nothing.
                             ignoreRest = true
                             continue
                         }
@@ -145,6 +150,8 @@ internal fun Modifier.timelineGestures(
             } catch (cancelled: CancellationException) {
                 if (dragging) callbacks.onDragCancel()
                 throw cancelled
+            } finally {
+                if (longPressed) callbacks.onLongPressEnd()
             }
 
             val locked = direction
@@ -168,16 +175,16 @@ internal fun Modifier.timelineGestures(
     }
 }
 
-private fun dragKind(
+/** What a drag does once its direction locks; null means scroll (or nothing after a long press). */
+internal fun dragKind(
     target: HitTarget,
-    isHandle: Boolean,
     longPressed: Boolean,
+    canMoveTime: Boolean,
     direction: DragDirection,
 ): DragKind? = when {
-    isHandle && target is HitTarget.StartHandle -> DragKind.RESIZE_START
-    isHandle -> DragKind.RESIZE_END
-    !longPressed -> null
-    direction == DragDirection.VERTICAL -> DragKind.REORDER
-    target is HitTarget.BarBody -> DragKind.MOVE
+    target is HitTarget.StartHandle -> DragKind.RESIZE_START
+    target is HitTarget.EndHandle -> DragKind.RESIZE_END
+    direction == DragDirection.HORIZONTAL && canMoveTime -> DragKind.MOVE
+    direction == DragDirection.VERTICAL && longPressed -> DragKind.REORDER
     else -> null
 }

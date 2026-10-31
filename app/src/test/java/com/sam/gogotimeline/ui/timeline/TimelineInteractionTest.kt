@@ -93,12 +93,31 @@ class TimelineInteractionTest {
     }
 
     @Test
-    fun onlyTheSelectedRowCanBeLongPressed() = runTest {
-        val (interaction, _, _) = setUp(selectedTaskId = 1)
+    fun anyRowCanBeLongPressed() = runTest {
+        val (interaction, _, _) = setUp()
         assertTrue(interaction.canLongPress(HitTarget.RowBlank(1)))
-        assertTrue(interaction.canLongPress(HitTarget.LeftPaneRow(1)))
-        assertFalse(interaction.canLongPress(HitTarget.RowBlank(2)))
+        assertTrue(interaction.canLongPress(HitTarget.LeftPaneRow(2)))
+        assertTrue(interaction.canLongPress(HitTarget.BarLabel(3)))
         assertFalse(interaction.canLongPress(HitTarget.StartHandle(1)))
+        assertFalse(interaction.canLongPress(HitTarget.Empty))
+    }
+
+    @Test
+    fun onlyTheSelectedBarMovesTime() = runTest {
+        val (interaction, _, _) = setUp(selectedTaskId = 1)
+        assertTrue(interaction.canMoveTime(HitTarget.BarBody(1)))
+        assertFalse(interaction.canMoveTime(HitTarget.BarBody(2)))
+        assertFalse(interaction.canMoveTime(HitTarget.RowBlank(1)))
+    }
+
+    @Test
+    fun unselectedTaskReordersWithoutBeingSelected() = runTest {
+        val (interaction, _, recorder) = setUp()
+        val down = Offset(axis(800f), rowY(1))
+        interaction.onDragStart(HitTarget.RowBlank(2), DragKind.REORDER, down)
+        interaction.onDrag(down + Offset(0f, ROW))
+        interaction.onDragEnd()
+        assertEquals(listOf("move 2 2"), recorder.events)
     }
 
     @Test
@@ -225,6 +244,95 @@ class TimelineInteractionTest {
         advanceUntilIdle()
         assertTrue(recorder.events.isEmpty())
         assertEquals(MARGIN, state.timeToX(offScreenRight.start.toDouble()), 0.01f)
+    }
+
+    @Test
+    fun blankSpaceInARowEditsThatTask() = runTest {
+        val (interaction, _, recorder) = setUp()
+        interaction.onTap(HitTarget.RowBlank(1))
+        assertEquals(listOf("tap 1"), recorder.events)
+    }
+
+    @Test
+    fun blankSpaceOfAnOffScreenTaskOnlyScrolls() = runTest {
+        val (interaction, state, recorder) = setUp()
+        interaction.onTap(HitTarget.RowBlank(2))
+        advanceUntilIdle()
+        assertTrue(recorder.events.isEmpty())
+        assertEquals(MARGIN, state.timeToX(offScreenRight.start.toDouble()), 0.01f)
+    }
+
+    private fun TimelineInteraction.receive(tasks: List<TimelineTask>) {
+        update(
+            tasks = tasks,
+            selectedTaskId = 1,
+            snap = SnapInterval(15),
+            sizes = InteractionSizes(HEADER, ROW, 64f, 32f, 8f, 8f, MARGIN),
+            callbacks = TimelineCallbacks(),
+            labelText = { "" },
+            labelWidth = { 0f },
+            haptic = {},
+        )
+        clearReleasedIfApplied()
+    }
+
+    private fun TimelineInteraction.dropFirstRowOneDown() {
+        val down = Offset(axis(800f), rowY(0))
+        onDragStart(HitTarget.RowBlank(1), DragKind.REORDER, down)
+        onDrag(down + Offset(0f, ROW))
+        onDragEnd()
+    }
+
+    @Test
+    fun droppedOrderShowsBeforeTheOwnerApplies() = runTest {
+        val (interaction, _, _) = setUp(selectedTaskId = 1)
+        interaction.dropFirstRowOneDown()
+        assertEquals(listOf(2L, 1L, 3L), interaction.rowTasks().map { it.id })
+    }
+
+    @Test
+    fun droppedOrderIsDroppedOnceApplied() = runTest {
+        val (interaction, _, _) = setUp(selectedTaskId = 1)
+        interaction.dropFirstRowOneDown()
+        interaction.receive(listOf(offScreenRight, visible, partlyLeft))
+        interaction.receive(listOf(visible, offScreenRight, partlyLeft))
+        assertEquals(listOf(1L, 2L, 3L), interaction.rowTasks().map { it.id })
+    }
+
+    @Test
+    fun droppedOrderOfADeletedTaskIsDropped() = runTest {
+        val (interaction, _, _) = setUp(selectedTaskId = 1)
+        interaction.dropFirstRowOneDown()
+        interaction.receive(listOf(offScreenRight, partlyLeft))
+        assertEquals(listOf(2L, 3L), interaction.rowTasks().map { it.id })
+    }
+
+    @Test
+    fun longPressLiftsTheRowUntilRelease() = runTest {
+        val (interaction, _, _) = setUp(selectedTaskId = 1)
+        interaction.onLongPress(HitTarget.RowBlank(1))
+        assertEquals(1L, interaction.liftedTaskId)
+        interaction.onLongPressEnd()
+        assertNull(interaction.liftedTaskId)
+    }
+
+    @Test
+    fun rowStaysLiftedAfterTheDropUntilTheFingerLifts() = runTest {
+        val (interaction, _, _) = setUp(selectedTaskId = 1)
+        interaction.onLongPress(HitTarget.RowBlank(1))
+        interaction.dropFirstRowOneDown()
+        assertEquals(1L, interaction.liftedTaskId)
+        interaction.onLongPressEnd()
+        assertNull(interaction.liftedTaskId)
+    }
+
+    @Test
+    fun interruptedGestureLowersTheRow() = runTest {
+        val (interaction, _, _) = setUp(selectedTaskId = 1)
+        interaction.onLongPress(HitTarget.BarBody(1))
+        interaction.onDragCancel()
+        interaction.onLongPressEnd()
+        assertNull(interaction.liftedTaskId)
     }
 
     private companion object {

@@ -119,6 +119,8 @@ object LayoutConst {
 
     // Shadow under the row lifted while reordering.
     const val DRAG_ELEVATION_DP = 6f
+    const val LONG_PRESS_LIFT_SCALE = 1.03f
+    const val LONG_PRESS_LIFT_ANIMATION_MILLIS = 100
 
     // Rows passed while reordering slide into the free slot; short so they never lag behind the finger.
     const val REORDER_SHIFT_ANIMATION_MILLIS = 150
@@ -166,6 +168,8 @@ object LayoutConst {
     const val ZOOM_ANIMATION_MILLIS = 300
     const val EDGE_AUTO_SCROLL_ZONE_DP = 48f
     const val MAX_AUTO_SCROLL_SPEED_DP_PER_SECOND = 600f
+    const val LONG_PRESS_SHORTEN_MILLIS = 100L
+    const val LONG_PRESS_MIN_MILLIS = 300L
     const val LONG_PRESS_TIMEOUT_MILLIS = 400L
 
     // Names
