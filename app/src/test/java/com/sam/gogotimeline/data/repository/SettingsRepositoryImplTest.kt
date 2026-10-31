@@ -13,11 +13,22 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsRepositoryImplTest {
     private val settings = mockk<SettingsLocalDataSource>(relaxed = true)
-    private val repository = SettingsRepositoryImpl(settings)
+    private val transaction = RecordingTransactionRunner()
+    private val repository = SettingsRepositoryImpl(settings, transaction)
+
+    // Hour pinched to 96dp at 1x, left pane open.
+    private val stored = TimelineSettings.DEFAULT.copy(
+        zoom = ZoomLevel(TimeUnit.HOUR, 96f),
+        widthMultiplier = 1f,
+        snapIntervals = TimeUnit.entries.associateWith { SnapInterval.options(it).last() },
+        rowHeightDp = 80f,
+        leftPaneExpanded = true,
+    )
 
     @Test
     fun zoomSavesUnitAndWidthTogether() = runTest {
@@ -27,7 +38,6 @@ class SettingsRepositoryImplTest {
 
     @Test
     fun storedRowBecomesSettings() = runTest {
-        val stored = TimelineSettings.DEFAULT.copy(rowHeightDp = 80f, leftPaneExpanded = true)
         coEvery { settings.observe() } returns flowOf(stored.toEntity())
         assertEquals(stored, repository.observeSettings().first())
     }
@@ -45,7 +55,44 @@ class SettingsRepositoryImplTest {
     }
 
     @Test
-    fun resetWritesTheDefaultRow() = runTest {
+    fun widthMultiplierScalesTheCurrentWidthInOneTransaction() = runTest {
+        coEvery { settings.get() } returns stored.toEntity()
+        coEvery { settings.updateWidth(any(), any()) } answers { assertTrue(transaction.active) }
+        repository.setWidthMultiplier(2f)
+        coVerify { settings.updateWidth(2f, 192f) }
+        assertEquals(1, transaction.runs)
+    }
+
+    @Test
+    fun widthMultiplierWithoutARowScalesTheDefaults() = runTest {
+        coEvery { settings.get() } returns null
+        repository.setWidthMultiplier(0.5f)
+        coVerify { settings.updateWidth(0.5f, TimeUnit.DAY.standardWidthDp * 0.5f) }
+    }
+
+    @Test
+    fun failedWidthWriteLeavesTheTransactionToRollBack() = runTest {
+        coEvery { settings.get() } returns stored.toEntity()
+        coEvery { settings.updateWidth(any(), any()) } throws IllegalStateException("disk")
+        val result = runCatching { repository.setWidthMultiplier(2f) }
+        assertTrue(result.isFailure)
+        assertEquals(1, transaction.runs)
+    }
+
+    @Test
+    fun resetKeepsUnitAndPaneAndScalesTheWidthBack() = runTest {
+        // 2x with Hour pinched to 192dp goes back to 1x at 96dp (spec 8).
+        coEvery { settings.get() } returns stored.copy(zoom = ZoomLevel(TimeUnit.HOUR, 192f), widthMultiplier = 2f)
+            .toEntity()
+        coEvery { settings.insert(any()) } answers { assertTrue(transaction.active) }
+        repository.resetToDefaults()
+        val expected = TimelineSettings.DEFAULT.copy(zoom = ZoomLevel(TimeUnit.HOUR, 96f), leftPaneExpanded = true)
+        coVerify { settings.insert(expected.toEntity()) }
+    }
+
+    @Test
+    fun resetWithoutARowWritesTheDefaults() = runTest {
+        coEvery { settings.get() } returns null
         repository.resetToDefaults()
         coVerify { settings.insert(TimelineSettings.DEFAULT.toEntity()) }
     }

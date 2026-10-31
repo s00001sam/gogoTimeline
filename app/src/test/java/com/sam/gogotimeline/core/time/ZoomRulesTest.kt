@@ -1,6 +1,7 @@
 package com.sam.gogotimeline.core.time
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ZoomRulesTest {
@@ -83,6 +84,62 @@ class ZoomRulesTest {
         assertEquals(256f, ZoomRules.clampDpPerUnit(TimeUnit.HOUR, 1_000_000f, ONE_X), EPSILON)
         assertEquals(45f, ZoomRules.clampDpPerUnit(TimeUnit.MONTH, 0.001f, ONE_X), EPSILON)
         assertEquals(TimeUnit.MONTH, ZoomRules.resolveUnit(TimeUnit.HOUR, 0.0001f, ONE_X))
+    }
+
+    @Test
+    fun multiplierRoundsToATenth() {
+        // Exactly 1.4f, not 1.4000001f, so the database never stores float noise.
+        assertEquals(1.4f, ZoomRules.roundWidthMultiplier(1.43f))
+        assertEquals(1.5f, ZoomRules.roundWidthMultiplier(1.46f))
+    }
+
+    @Test
+    fun multiplierEndsStayPut() {
+        assertEquals(0.5f, ZoomRules.roundWidthMultiplier(0.5f), EPSILON)
+        assertEquals(2f, ZoomRules.roundWidthMultiplier(2f), EPSILON)
+    }
+
+    @Test
+    fun multiplierOutsideTheRangeIsClamped() {
+        assertEquals(0.5f, ZoomRules.roundWidthMultiplier(0.04f), EPSILON)
+        assertEquals(2f, ZoomRules.roundWidthMultiplier(9f), EPSILON)
+    }
+
+    @Test
+    fun newMultiplierScalesThePinchedWidth() {
+        // Spec 8: Hour pinched to 96dp at 1x becomes 192dp at 2x.
+        assertEquals(ZoomLevel(TimeUnit.HOUR, 192f), ZoomRules.rescale(ZoomLevel(TimeUnit.HOUR, 96f), 1f, 2f))
+    }
+
+    @Test
+    fun sameMultiplierKeepsTheWidth() {
+        assertEquals(ZoomLevel(TimeUnit.WEEK, 112f), ZoomRules.rescale(ZoomLevel(TimeUnit.WEEK, 112f), 1.3f, 1.3f))
+    }
+
+    @Test
+    fun scaledWidthStaysWithinTheNewLimits() {
+        // At the Hour maximum (4 × 64dp) under 2x, going down to 0.5x lands exactly on the 0.5x maximum.
+        val atMax = ZoomLevel(TimeUnit.HOUR, 512f)
+        val scaled = ZoomRules.rescale(atMax, 2f, 0.5f)
+        assertEquals(128f, scaled.dpPerUnit, EPSILON)
+        assertEquals(128f, ZoomRules.clampDpPerUnit(TimeUnit.HOUR, scaled.dpPerUnit, 0.5f), EPSILON)
+    }
+
+    @Test
+    fun everyUnitOffersItsDefaultSnap() {
+        TimeUnit.entries.forEach { unit -> assertTrue(SnapInterval.default(unit) in SnapInterval.options(unit)) }
+        assertEquals(listOf(15, 30, 60), SnapInterval.options(TimeUnit.HOUR).map { it.minutes })
+    }
+
+    @Test
+    fun dayOffersTheMostSnaps() {
+        assertEquals(4, SnapInterval.options(TimeUnit.DAY).size)
+        assertEquals(listOf(1_440, 10_080), SnapInterval.options(TimeUnit.MONTH).map { it.minutes })
+    }
+
+    @Test
+    fun everySnapIsAMultipleOfTheTimePickerStep() {
+        TimeUnit.entries.flatMap { SnapInterval.options(it) }.forEach { assertEquals(0, it.minutes % 15) }
     }
 
     private companion object {

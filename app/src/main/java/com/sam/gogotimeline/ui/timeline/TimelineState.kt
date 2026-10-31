@@ -183,6 +183,12 @@ class TimelineState(
         centerTime = centerFor(time, x)
     }
 
+    /** Applies a zoom saved elsewhere (e.g. a new width multiplier from Settings), keeping the center time. */
+    fun setZoom(zoom: ZoomLevel) {
+        unit = zoom.unit
+        dpPerUnit = zoom.dpPerUnit
+    }
+
     /** The center time that puts [time] at [x] px from the axis' left edge, within the scroll limits. */
     private fun centerFor(
         time: Double,

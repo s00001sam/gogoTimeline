@@ -2,6 +2,7 @@ package com.sam.gogotimeline.core.time
 
 import com.sam.gogotimeline.core.TimeConst
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /** Unit and width always travel together, e.g. Week + 112dp means one week is 112dp wide. */
@@ -75,6 +76,25 @@ object ZoomRules {
         val target = if (isAtStandardWidth(unit, dpPerUnit, widthMultiplier)) unit.next() else unit
         return ZoomLevel(target, target.standardWidthDp(widthMultiplier))
     }
+
+    /** The settings slider's value on release: rounded to the nearest 0.1x within 0.5x–2x. */
+    fun roundWidthMultiplier(value: Float): Float {
+        // Dividing by the steps per 1x (10) gives exactly 1.4f; multiplying by 0.1f would give 1.4000001f.
+        val stepsPerX = (1f / TimeConst.WIDTH_MULTIPLIER_STEP).roundToInt()
+        return ((value * stepsPerX).roundToInt().toFloat() / stepsPerX)
+            .coerceIn(TimeConst.WIDTH_MULTIPLIER_MIN, TimeConst.WIDTH_MULTIPLIER_MAX)
+    }
+
+    /**
+     * The current width under a new multiplier, keeping how far pinch zoom moved it from the standard width
+     * (spec 8): e.g. Hour pinched to 96dp at 1x becomes 192dp at 2x. Scaling all limits by the same ratio keeps
+     * the result within the new limits.
+     */
+    fun rescale(
+        zoom: ZoomLevel,
+        oldMultiplier: Float,
+        newMultiplier: Float,
+    ): ZoomLevel = zoom.copy(dpPerUnit = zoom.dpPerUnit * newMultiplier / oldMultiplier)
 
     // Geometric mean of the standard scales of [finer] and the unit above it, in dp per day.
     private fun switchPoint(

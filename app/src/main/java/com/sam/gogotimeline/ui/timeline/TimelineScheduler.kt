@@ -34,7 +34,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -62,6 +61,7 @@ import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
+import com.sam.gogotimeline.ui.snapIntervalLabel
 import com.sam.gogotimeline.ui.theme.GogoTimelineTheme
 import com.sam.gogotimeline.ui.theme.SnapHintBackground
 import com.sam.gogotimeline.ui.theme.SnapHintText
@@ -494,14 +494,7 @@ private fun Modifier.dimmedWhileEditing(
 /** `Current snap interval: 1 day` in bold, then what resizing does. */
 @Composable
 private fun snapHintText(interval: SnapInterval): AnnotatedString {
-    val minutes = interval.minutes
-    val (pluralRes, count) = when {
-        minutes % SnapInterval.WEEK_MINUTES == 0 -> R.plurals.snap_weeks to minutes / SnapInterval.WEEK_MINUTES
-        minutes % SnapInterval.DAY_MINUTES == 0 -> R.plurals.snap_days to minutes / SnapInterval.DAY_MINUTES
-        minutes % MINUTES_PER_HOUR == 0 -> R.plurals.snap_hours to minutes / MINUTES_PER_HOUR
-        else -> R.plurals.snap_minutes to minutes
-    }
-    val intervalLine = stringResource(R.string.snap_hint_interval, pluralStringResource(pluralRes, count, count))
+    val intervalLine = stringResource(R.string.snap_hint_interval, snapIntervalLabel(interval))
     val resizeLine = stringResource(R.string.snap_hint_resize)
     return buildAnnotatedString {
         withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(intervalLine) }
@@ -544,8 +537,6 @@ private fun DrawScope.drawSnapHint(
     )
     drawText(layout, topLeft = Offset(left + paddingX, top + paddingY))
 }
-
-private const val MINUTES_PER_HOUR = 60
 
 /** Lifts a long-pressed row: scales up a little with a shadow, so it reads as picked up even without haptics. */
 @Composable

@@ -22,8 +22,14 @@ import io.mockk.every
 import io.mockk.mockk
 import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -31,6 +37,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class BoardViewModelTest {
     @get:Rule
     val mainDispatcher = MainDispatcherRule()
@@ -307,6 +314,60 @@ class BoardViewModelTest {
         coVerify(exactly = 0) { taskRepository.saveTask(any()) }
         deleting.complete(Unit)
         assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun settingsOpensRightAwayWhenNotEditing() = runTest {
+        val viewModel = viewModel()
+        viewModel.onOpenSettings()
+        viewModel.openSettings.first()
+    }
+
+    @Test
+    fun settingsWithUnsavedChangesAsksFirstAndOpensAfterDiscard() = runTest {
+        val viewModel = viewModel()
+        val opened = mutableListOf<Unit>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.openSettings.toList(opened) }
+        viewModel.editBWithLaterTime()
+        viewModel.onOpenSettings()
+        assertTrue(viewModel.ready.editStatus.confirmingClose)
+        assertTrue(opened.isEmpty())
+        viewModel.onDiscard()
+        assertNull(viewModel.ready.edit)
+        assertEquals(1, opened.size)
+    }
+
+    @Test
+    fun cancellingTheSettingsQuestionStaysOnTheBoard() = runTest {
+        val viewModel = viewModel()
+        val opened = mutableListOf<Unit>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.openSettings.toList(opened) }
+        viewModel.editBWithLaterTime()
+        viewModel.onOpenSettings()
+        viewModel.onCancelDialog()
+        // A later close must not open Settings either.
+        viewModel.onEmptyTap()
+        viewModel.onDiscard()
+        assertTrue(opened.isEmpty())
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun settingsWhileSavingWaitsAndUnchangedEditingJustEnds() = runTest {
+        val saving = CompletableDeferred<Unit>()
+        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        val viewModel = viewModel()
+        val opened = mutableListOf<Unit>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.openSettings.toList(opened) }
+        viewModel.editBWithLaterTime()
+        viewModel.onConfirm(TAIPEI)
+        viewModel.onOpenSettings()
+        assertTrue(opened.isEmpty())
+        saving.complete(Unit)
+        viewModel.onTaskTap(A)
+        viewModel.onOpenSettings()
+        assertNull(viewModel.ready.edit)
+        assertEquals(1, opened.size)
     }
 
     @Test

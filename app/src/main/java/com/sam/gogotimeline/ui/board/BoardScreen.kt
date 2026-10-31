@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -102,9 +104,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun BoardScreen(
     modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {},
     viewModel: BoardViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val currentOnOpenSettings by rememberUpdatedState(onOpenSettings)
+    LaunchedEffect(viewModel) { viewModel.openSettings.collect { currentOnOpenSettings() } }
     val ready = uiState as? BoardUiState.Ready
     val settings = ready?.settings ?: TimelineSettings.DEFAULT
     val calendar = rememberCalendarContext()
@@ -133,6 +138,11 @@ fun BoardScreen(
         val x = if (position.centered) state.viewportWidthPx / 2 else marginPx
         state.jumpTo(ready.settings.zoom, position.rowIndex, position.time.toDouble(), x)
         opened = true
+    }
+    // A new width multiplier (or a reset) from Settings rescales the saved width; the scheduler follows it with the
+    // center time unchanged. Pinch zoom saves its own width, so only the multiplier is watched.
+    LaunchedEffect(ready?.settings?.widthMultiplier) {
+        if (ready != null && opened) state.setZoom(ready.settings.zoom)
     }
 
     val sheet = remember(ready?.edit, ready?.editStatus, calendar) {
@@ -185,6 +195,7 @@ fun BoardScreen(
         todayDayOfMonth = todayDayOfMonth,
         onGoToToday = { scope.launch { state.animateCenterTo(System.currentTimeMillis().toDouble()) } },
         onZoomChange = viewModel::onZoomChange,
+        onSettingsClick = viewModel::onOpenSettings,
         // Starts at "now" floored to the current snap and lasts two of the current unit (spec 7.3); an off-screen
         // bar is scrolled to like a tapped off-screen task.
         onNewTask = {
@@ -266,6 +277,7 @@ fun BoardContent(
     todayDayOfMonth: Int,
     onGoToToday: () -> Unit,
     onZoomChange: (ZoomLevel) -> Unit = {},
+    onSettingsClick: () -> Unit = {},
     onNewTask: () -> Unit = {},
     sheet: TaskSheetState? = null,
     onTitleChange: (String) -> Unit = {},
@@ -423,6 +435,7 @@ fun BoardContent(
                         ) {
                             Text(stringResource(state.unit.labelRes()))
                         }
+                        OverflowMenu(onSettingsClick = onSettingsClick)
                     }
                 },
             )
@@ -549,6 +562,33 @@ private fun TodayButton(
                 text = dayOfMonth.toString(),
                 color = color,
                 style = MaterialTheme.typography.labelMedium.copy(fontSize = textSize, lineHeight = textSize),
+            )
+        }
+    }
+}
+
+/**
+ * The ⋮ menu at the far right of the top bar: Settings now, the board's Rename and Delete in step 7, so the top
+ * right never holds more than three buttons.
+ */
+@Composable
+private fun OverflowMenu(onSettingsClick: () -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                painter = painterResource(R.drawable.ic_more_vert),
+                contentDescription = stringResource(R.string.more_options),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.settings)) },
+                onClick = {
+                    expanded = false
+                    onSettingsClick()
+                },
+                leadingIcon = { Icon(painter = painterResource(R.drawable.ic_settings), contentDescription = null) },
             )
         }
     }

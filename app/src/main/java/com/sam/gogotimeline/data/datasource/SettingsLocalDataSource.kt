@@ -7,7 +7,14 @@ import kotlinx.coroutines.flow.Flow
 interface SettingsLocalDataSource {
     fun observe(): Flow<SettingsEntity?>
 
+    suspend fun get(): SettingsEntity?
+
     suspend fun insert(settings: SettingsEntity)
+
+    suspend fun updateWidth(
+        multiplier: Float,
+        dpPerUnit: Float,
+    )
 
     suspend fun updateZoom(
         unit: TimeUnit,

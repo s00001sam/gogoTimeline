@@ -9,7 +9,14 @@ import kotlinx.coroutines.flow.Flow
 class SettingsLocalDataSourceImpl @Inject constructor(private val settingsDao: SettingsDao) : SettingsLocalDataSource {
     override fun observe(): Flow<SettingsEntity?> = settingsDao.observe()
 
+    override suspend fun get(): SettingsEntity? = settingsDao.get()
+
     override suspend fun insert(settings: SettingsEntity) = settingsDao.insert(settings)
+
+    override suspend fun updateWidth(
+        multiplier: Float,
+        dpPerUnit: Float,
+    ) = settingsDao.updateWidth(multiplier, dpPerUnit)
 
     override suspend fun updateZoom(
         unit: TimeUnit,

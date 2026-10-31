@@ -18,6 +18,7 @@ import javax.inject.Inject
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -50,6 +52,13 @@ class BoardViewModel @Inject constructor(
     private val edit = MutableStateFlow(EditSession.restore(savedStateHandle))
     private val editStatus = MutableStateFlow(EditStatus())
     private val topRowIndex = MutableStateFlow<Int?>(null)
+    private val settingsRequests = Channel<Unit>(Channel.CONFLATED)
+
+    // Settings was selected with unsaved changes: it opens once Save or Discard ends editing.
+    private var openSettingsAfterEditing = false
+
+    /** One event each time Settings should open. */
+    val openSettings: Flow<Unit> = settingsRequests.receiveAsFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<BoardUiState> = loadRequests
@@ -81,6 +90,26 @@ class BoardViewModel @Inject constructor(
     fun onNewTask(schedule: TaskSchedule) {
         if (edit.value != null || ready == null) return
         setEdit(EditSession.newTask(schedule, Random.nextInt(LayoutConst.TASK_COLOR_COUNT)))
+    }
+
+    /** With unsaved changes, opening Settings asks Save / Discard first, like any other way of leaving the editor. */
+    fun onOpenSettings() {
+        val session = edit.value
+        when {
+            session == null -> settingsRequests.trySend(Unit)
+
+            editStatus.value.isBusy -> Unit
+
+            session.isDirty -> {
+                openSettingsAfterEditing = true
+                editStatus.value = EditStatus(confirmingClose = true)
+            }
+
+            else -> {
+                endEditing()
+                settingsRequests.trySend(Unit)
+            }
+        }
     }
 
     fun onEmptyTap() = requestClose()
@@ -170,7 +199,9 @@ class BoardViewModel @Inject constructor(
 
     /** Closes the Save / Discard or Delete dialog and goes back to editing with the draft kept. */
     fun onCancelDialog() {
-        if (!editStatus.value.isBusy) editStatus.value = EditStatus()
+        if (editStatus.value.isBusy) return
+        openSettingsAfterEditing = false
+        editStatus.value = EditStatus()
     }
 
     /** The sheet's Delete: asks first. A new task has no Delete; it is discarded instead. */
@@ -244,6 +275,10 @@ class BoardViewModel @Inject constructor(
     private fun endEditing() {
         setEdit(null)
         editStatus.value = EditStatus()
+        if (openSettingsAfterEditing) {
+            openSettingsAfterEditing = false
+            settingsRequests.trySend(Unit)
+        }
     }
 
     private fun setEdit(session: EditSession?) {

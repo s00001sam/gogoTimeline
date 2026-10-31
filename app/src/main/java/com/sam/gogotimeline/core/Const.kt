@@ -66,10 +66,12 @@ object TimeConst {
 /** Layout and interaction values. */
 object LayoutConst {
     // Rows
-    const val ROW_HEIGHT_MIN_DP = 48f
-    const val ROW_HEIGHT_MAX_DP = 96f
+    // Settings show row height as a multiplier of the default: 0.8x–2x in 0.1x steps, i.e. about 51–128dp. The
+    // lowest still fits two name lines and the bar's time label.
     const val ROW_HEIGHT_DEFAULT_DP = 64f
-    const val ROW_HEIGHT_STEP_DP = 4f
+    const val ROW_HEIGHT_MULTIPLIER_MIN = 0.8f
+    const val ROW_HEIGHT_MULTIPLIER_MAX = 2f
+    const val ROW_HEIGHT_MULTIPLIER_STEP = 0.1f
     const val ROW_BUFFER = 2
 
     // Header
@@ -237,6 +239,15 @@ object LayoutConst {
     // Phone vs. tablet
     const val TABLET_MIN_WIDTH_DP = 600f
     const val TABLET_MIN_HEIGHT_DP = 480f
+
+    // Settings page
+    const val SETTINGS_PADDING_DP = 16f
+    const val SETTINGS_SECTION_SPACING_DP = 24f
+    const val SETTINGS_VALUE_MIN_WIDTH_DP = 56f
+    const val SETTINGS_SAMPLE_GAP_DP = 16f
+
+    // Added to the section spacing, so Reset sits further from the settings above it.
+    const val SETTINGS_RESET_EXTRA_GAP_DP = 24f
 
     // Tablet dialogs
     const val DIALOG_WIDTH_DP = 560f

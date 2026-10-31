@@ -13,8 +13,17 @@ interface SettingsDao {
     @Query("SELECT * FROM settings WHERE id = ${SettingsEntity.ID}")
     fun observe(): Flow<SettingsEntity?>
 
+    @Query("SELECT * FROM settings WHERE id = ${SettingsEntity.ID}")
+    suspend fun get(): SettingsEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(settings: SettingsEntity)
+
+    @Query("UPDATE settings SET widthMultiplier = :multiplier, dpPerUnit = :dpPerUnit WHERE id = ${SettingsEntity.ID}")
+    suspend fun updateWidth(
+        multiplier: Float,
+        dpPerUnit: Float,
+    )
 
     @Query("UPDATE settings SET unit = :unit, dpPerUnit = :dpPerUnit WHERE id = ${SettingsEntity.ID}")
     suspend fun updateZoom(

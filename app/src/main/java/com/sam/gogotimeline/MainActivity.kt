@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.sam.gogotimeline.ui.board.BoardScreen
+import com.sam.gogotimeline.ui.navigation.AppNavigation
 import com.sam.gogotimeline.ui.theme.GogoTimelineTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -16,7 +16,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             GogoTimelineTheme {
-                BoardScreen()
+                AppNavigation()
             }
         }
     }

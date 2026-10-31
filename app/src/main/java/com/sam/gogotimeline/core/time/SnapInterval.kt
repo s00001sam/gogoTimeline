@@ -10,6 +10,14 @@ value class SnapInterval(val minutes: Int) {
         const val DAY_MINUTES = 1_440
         const val WEEK_MINUTES = 10_080
 
+        /** What the settings page offers for [unit] (spec 6.5), finest first. */
+        fun options(unit: TimeUnit): List<SnapInterval> = when (unit) {
+            TimeUnit.HOUR -> listOf(15, 30, 60)
+            TimeUnit.DAY -> listOf(60, 180, 360, 720)
+            TimeUnit.WEEK -> listOf(720, DAY_MINUTES)
+            TimeUnit.MONTH -> listOf(DAY_MINUTES, WEEK_MINUTES)
+        }.map(::SnapInterval)
+
         fun default(unit: TimeUnit): SnapInterval = SnapInterval(
             when (unit) {
                 TimeUnit.HOUR -> TimeConst.SNAP_HOUR_DEFAULT_MINUTES
