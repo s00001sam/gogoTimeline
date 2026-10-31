@@ -40,6 +40,24 @@ val GridMinorDark = Color(0xFF333333)
 val GridMajorLight = Color(0xFFCFCFCF)
 val GridMajorDark = Color(0xFF4A4A4A)
 
+// Neutral containers and outlines, so dialogs, sheets and pickers never fall back to Material's default purple
+val SurfaceContainerLowestLight = Color(0xFFFFFFFF)
+val SurfaceContainerLowLight = Color(0xFFF7F7F7)
+val SurfaceContainerLight = Color(0xFFF2F2F2)
+val SurfaceContainerHighLight = Color(0xFFECECEC)
+val SurfaceContainerHighestLight = Color(0xFFE6E6E6)
+val SurfaceVariantLight = Color(0xFFEEEEEE)
+val OutlineLight = Color(0xFF8A8A8A)
+val OutlineVariantLight = Color(0xFFD6D6D6)
+val SurfaceContainerLowestDark = Color(0xFF1A1A1A)
+val SurfaceContainerLowDark = Color(0xFF262626)
+val SurfaceContainerDark = Color(0xFF2A2A2A)
+val SurfaceContainerHighDark = Color(0xFF333333)
+val SurfaceContainerHighestDark = Color(0xFF3D3D3D)
+val SurfaceVariantDark = Color(0xFF3A3A3A)
+val OutlineDark = Color(0xFF8A8A8A)
+val OutlineVariantDark = Color(0xFF444444)
+
 /**
  * Task colors (tentative), indexed by the color index stored in the database:
  * red, orange, yellow, green, blue, indigo, violet. Light-mode colors are dark enough for white text.

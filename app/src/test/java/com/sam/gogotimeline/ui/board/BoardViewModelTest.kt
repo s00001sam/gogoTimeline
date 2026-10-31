@@ -1,5 +1,6 @@
 package com.sam.gogotimeline.ui.board
 
+import androidx.lifecycle.SavedStateHandle
 import com.sam.gogotimeline.core.time.TAIPEI
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.TimeRange
@@ -18,9 +19,12 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -46,6 +50,7 @@ class BoardViewModelTest {
     private val a = task(A, 0)
     private val b = task(B, 1)
     private val c = task(C, 2)
+    private val later = TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T13:00"), TAIPEI.at("2026-10-31T14:30")))
 
     private val board = MutableStateFlow<Board?>(Board(BOARD, "Sample Project", anchorTaskId = A, lastOpenedAt = 0))
     private val tasks = MutableStateFlow(listOf(a, b, c))
@@ -62,26 +67,60 @@ class BoardViewModelTest {
         every { observeSettings() } returns settings
     }
 
-    private fun viewModel() = BoardViewModel(boardRepository, taskRepository, settingsRepository)
+    private fun viewModel(savedState: SavedStateHandle = SavedStateHandle()) =
+        BoardViewModel(boardRepository, taskRepository, settingsRepository, savedState)
 
     private val BoardViewModel.ready get() = uiState.value as BoardUiState.Ready
+
+    private fun BoardViewModel.editBWithLaterTime() {
+        onTaskTap(B)
+        onTaskScheduleChange(B, later)
+    }
 
     @Test
     fun boardTasksAndSettingsMakeReady() {
         val viewModel = viewModel()
         assertEquals(
-            BoardUiState.Ready(board.value!!, listOf(a, b, c), TimelineSettings.DEFAULT, selectedTaskId = null),
+            BoardUiState.Ready(board.value!!, listOf(a, b, c), TimelineSettings.DEFAULT, edit = null),
             viewModel.uiState.value,
         )
         coVerify { boardRepository.markOpened(BOARD) }
     }
 
     @Test
-    fun dragKeepsTitleAndColorAndSavesTheNewTime() {
+    fun tapStartsEditingTheTask() {
         val viewModel = viewModel()
-        val later = TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T13:00"), TAIPEI.at("2026-10-31T14:30")))
-        viewModel.onTaskScheduleChange(B, later)
+        viewModel.onTaskTap(B)
+        assertEquals(B, viewModel.ready.selectedTaskId)
+        assertFalse(viewModel.ready.edit!!.isDirty)
+    }
+
+    @Test
+    fun dragChangesOnlyTheDraft() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        assertEquals(later, viewModel.ready.edit!!.draft.schedule)
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+    }
+
+    @Test
+    fun closingWithChangesAsksSaveOrDiscard() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onEmptyTap()
+        assertTrue(viewModel.ready.editStatus.confirmingClose)
+        assertEquals(B, viewModel.ready.selectedTaskId)
+    }
+
+    @Test
+    fun saveWritesTheDraftAndEndsEditing() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onEmptyTap()
+        viewModel.onSave()
         coVerify { taskRepository.saveTask(TaskEdit(B, "Task $B", later, colorIndex = 1)) }
+        assertNull(viewModel.ready.edit)
+        assertEquals(EditStatus(), viewModel.ready.editStatus)
     }
 
     @Test
@@ -92,21 +131,52 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun tapSelectsAndEmptyTapDeselects() {
+    fun reorderZoomAndLeftPaneAreSavedRightAway() {
         val viewModel = viewModel()
-        viewModel.onTaskTap(B)
-        assertEquals(B, viewModel.ready.selectedTaskId)
-        viewModel.onEmptyTap()
-        assertEquals(null, viewModel.ready.selectedTaskId)
+        viewModel.onTaskMove(A, 2)
+        viewModel.onZoomChange(ZoomLevel(TimeUnit.WEEK, 90f))
+        viewModel.onToggleLeftPane()
+        coVerify { taskRepository.moveTask(BOARD, A, 2) }
+        coVerify { settingsRepository.setZoom(ZoomLevel(TimeUnit.WEEK, 90f)) }
+        coVerify { settingsRepository.setLeftPaneExpanded(true) }
     }
 
     @Test
-    fun zoomAndLeftPaneAreSaved() {
+    fun closingWithoutChangesEndsRightAway() {
         val viewModel = viewModel()
-        viewModel.onZoomChange(ZoomLevel(TimeUnit.WEEK, 90f))
-        viewModel.onToggleLeftPane()
-        coVerify { settingsRepository.setZoom(ZoomLevel(TimeUnit.WEEK, 90f)) }
-        coVerify { settingsRepository.setLeftPaneExpanded(true) }
+        viewModel.onTaskTap(B)
+        viewModel.onEmptyTap()
+        assertNull(viewModel.ready.edit)
+        assertFalse(viewModel.ready.editStatus.confirmingClose)
+    }
+
+    @Test
+    fun draggingBackCountsAsNoChange() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onTaskScheduleChange(B, b.schedule)
+        viewModel.onBack()
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun cancelKeepsEditingWithTheDraft() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onEmptyTap()
+        viewModel.onCancelClose()
+        assertFalse(viewModel.ready.editStatus.confirmingClose)
+        assertEquals(later, viewModel.ready.edit!!.draft.schedule)
+    }
+
+    @Test
+    fun discardDropsTheDraft() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onEmptyTap()
+        viewModel.onDiscard()
+        assertNull(viewModel.ready.edit)
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
     }
 
     @Test
@@ -135,6 +205,46 @@ class BoardViewModelTest {
     }
 
     @Test
+    fun failedSaveKeepsTheDraftAndShowsTheError() {
+        coEvery { taskRepository.saveTask(any()) } throws IllegalStateException("disk")
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onEmptyTap()
+        viewModel.onSave()
+        assertEquals(
+            EditStatus(confirmingClose = true, isSaving = false, saveFailed = true),
+            viewModel.ready.editStatus,
+        )
+        assertEquals(later, viewModel.ready.edit!!.draft.schedule)
+    }
+
+    @Test
+    fun nothingChangesTheDraftWhileSaving() {
+        val saving = CompletableDeferred<Unit>()
+        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onEmptyTap()
+        viewModel.onSave()
+        viewModel.onTaskScheduleChange(B, b.schedule)
+        viewModel.onCancelClose()
+        viewModel.onDiscard()
+        assertTrue(viewModel.ready.editStatus.isSaving)
+        assertEquals(later, viewModel.ready.edit!!.draft.schedule)
+        saving.complete(Unit)
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun draftSurvivesRecreation() {
+        val handle = SavedStateHandle()
+        viewModel(handle).editBWithLaterTime()
+        val recreated = viewModel(handle)
+        assertEquals(B, recreated.ready.selectedTaskId)
+        assertEquals(later, recreated.ready.edit!!.draft.schedule)
+    }
+
+    @Test
     fun failedLoadShowsErrorAndRetryRecovers() {
         coEvery { boardRepository.getStartBoardId() } throws IllegalStateException("disk") andThen BOARD
         val viewModel = viewModel()
@@ -147,14 +257,6 @@ class BoardViewModelTest {
     fun noBoardIsAnError() {
         coEvery { boardRepository.getStartBoardId() } returns null
         assertEquals(BoardUiState.Error, viewModel().uiState.value)
-    }
-
-    @Test
-    fun failedSaveKeepsTheScreenReady() {
-        coEvery { taskRepository.saveTask(any()) } throws IllegalStateException("disk")
-        val viewModel = viewModel()
-        viewModel.onTaskScheduleChange(A, a.schedule)
-        assertTrue(viewModel.uiState.value is BoardUiState.Ready)
     }
 
     @Test

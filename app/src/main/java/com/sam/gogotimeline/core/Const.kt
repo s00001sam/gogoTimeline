@@ -97,7 +97,6 @@ object LayoutConst {
     const val LEFT_PANE_PADDING_DP = 8f
     const val NAME_MAX_LINES = 2
     const val LEFT_PANE_ANIMATION_MILLIS = 300
-    const val CORNER_ARROW_EXPANDED_ROTATION_DEGREES = 180f
 
     // Very long bars are cut to one viewport width beyond each side, so a year-long bar at Hour zoom stays
     // within Compose's size limits.
@@ -111,6 +110,13 @@ object LayoutConst {
     // Tapping an off-screen task scrolls its start to this distance from the time axis' left edge.
     const val SCROLL_TO_TASK_MARGIN_DP = 24f
     const val BOARD_STATUS_SPACING_DP = 16f
+    const val SAVE_PROGRESS_SIZE_DP = 20f
+    const val SAVE_PROGRESS_STROKE_DP = 2f
+    const val SAVE_DIALOG_MAX_WIDTH_DP = 280f
+    const val SAVE_DIALOG_CORNER_DP = 16f
+    const val SAVE_DIALOG_PADDING_DP = 20f
+    const val SAVE_DIALOG_CLOSE_ICON_DP = 20f
+    const val SAVE_DIALOG_ELEVATION_DP = 6f
 
     // Time label near the finger while dragging.
     const val TIME_LABEL_GAP_DP = 8f
@@ -139,10 +145,10 @@ object LayoutConst {
     const val BAR_LABEL_LATER_PREFIX = "› "
 
     // Scheduler text sizes and line heights in dp: fixed, ignoring the system font scale (spec 10.3.1).
-    const val TEXT_TICK_TOP_DP = 16f
-    const val TEXT_TICK_TOP_LINE_DP = 20f
-    const val TEXT_TICK_BOTTOM_DP = 14f
-    const val TEXT_TICK_BOTTOM_LINE_DP = 18f
+    const val TEXT_TICK_TOP_DP = 14f
+    const val TEXT_TICK_TOP_LINE_DP = 18f
+    const val TEXT_TICK_BOTTOM_DP = 12f
+    const val TEXT_TICK_BOTTOM_LINE_DP = 16f
     const val TEXT_TASK_NAME_DP = 14f
     const val TEXT_TASK_NAME_LINE_DP = 18f
     const val TEXT_BAR_DP = 13f
@@ -155,8 +161,7 @@ object LayoutConst {
     const val TODAY_BOX_TEXT_DP = 11f
 
     // The whole top-left corner toggles the left pane, so the visible arrow can stay small.
-    const val CORNER_ARROW_SIZE_DP = 24f
-    const val CORNER_ARROW_ICON_DP = 18f
+    const val CORNER_ICON_SIZE_DP = 24f
 
     // Task bar
     const val BAR_VERTICAL_PADDING_DP = 8f

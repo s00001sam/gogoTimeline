@@ -1,6 +1,6 @@
 package com.sam.gogotimeline.ui.timeline
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -12,16 +12,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -60,11 +57,6 @@ internal fun LeftPaneCorner(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val description = stringResource(if (expanded) R.string.collapse_task_list else R.string.expand_task_list)
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) LayoutConst.CORNER_ARROW_EXPANDED_ROTATION_DEGREES else 0f,
-        animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
-        label = "leftPaneArrow",
-    )
     Box(
         modifier = modifier
             .background(colorScheme.surface)
@@ -72,19 +64,19 @@ internal fun LeftPaneCorner(
             .clickable(role = Role.Button, onClick = onToggle),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(LayoutConst.CORNER_ARROW_SIZE_DP.dp)
-                .background(colorScheme.secondaryContainer, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
+        // Cross-fades in step with the pane's width animation.
+        Crossfade(
+            targetState = expanded,
+            animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
+            label = "leftPaneIcon",
+        ) { isExpanded ->
             Icon(
-                painter = painterResource(R.drawable.ic_chevron_right),
+                painter = painterResource(
+                    if (isExpanded) R.drawable.ic_left_panel_close else R.drawable.ic_left_panel_open,
+                ),
                 contentDescription = null,
-                modifier = Modifier
-                    .size(LayoutConst.CORNER_ARROW_ICON_DP.dp)
-                    .rotate(arrowRotation),
-                tint = colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(LayoutConst.CORNER_ICON_SIZE_DP.dp),
+                tint = colorScheme.onSurfaceVariant,
             )
         }
     }

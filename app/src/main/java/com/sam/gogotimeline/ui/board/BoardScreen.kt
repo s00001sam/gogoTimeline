@@ -1,5 +1,6 @@
 package com.sam.gogotimeline.ui.board
 
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -85,7 +86,10 @@ fun BoardScreen(
         initialDpPerUnit = settings.zoom.dpPerUnit,
         calendar = calendar,
     )
-    val tasks = remember(ready?.tasks, calendar) { ready?.tasks.orEmpty().map { it.toTimelineTask(calendar) } }
+    val draft = ready?.edit?.draft
+    val tasks = remember(ready?.tasks, draft, calendar) {
+        tasksWithDraft(ready?.tasks.orEmpty(), draft).map { it.toTimelineTask(calendar) }
+    }
     val now = rememberNow()
     val todayDayOfMonth by remember(calendar) { derivedStateOf { calendar.localDate(now.value).dayOfMonth } }
     val scope = rememberCoroutineScope()
@@ -101,6 +105,8 @@ fun BoardScreen(
         state.jumpTo(ready.settings.zoom, position.rowIndex, position.time.toDouble(), x)
         opened = true
     }
+
+    BackHandler(enabled = ready?.edit != null) { viewModel.onBack() }
 
     val callbacks = remember(viewModel, calendar) {
         TimelineCallbacks(
@@ -131,6 +137,16 @@ fun BoardScreen(
         onGoToToday = { scope.launch { state.animateCenterTo(System.currentTimeMillis().toDouble()) } },
         onZoomChange = viewModel::onZoomChange,
     )
+    val editStatus = ready?.editStatus
+    if (editStatus?.confirmingClose == true) {
+        SaveChangesDialog(
+            isSaving = editStatus.isSaving,
+            saveFailed = editStatus.saveFailed,
+            onSave = viewModel::onSave,
+            onDiscard = viewModel::onDiscard,
+            onCancel = viewModel::onCancelClose,
+        )
+    }
 }
 
 /** While loading or after an error, the scheduler is a skeleton under an overlay that blocks touches. */

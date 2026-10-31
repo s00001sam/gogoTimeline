@@ -1,10 +1,10 @@
 package com.sam.gogotimeline.ui.board
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.ZoomLevel
-import com.sam.gogotimeline.data.model.TaskEdit
 import com.sam.gogotimeline.data.repository.BoardRepository
 import com.sam.gogotimeline.data.repository.SettingsRepository
 import com.sam.gogotimeline.data.repository.TaskRepository
@@ -29,17 +29,19 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Opens the most recently used board (step 7 moves this choice to a start screen). Drag results are written
- * straight to the database for now; step 5 turns them into drafts saved on ✓.
+ * Opens the most recently used board (step 7 moves this choice to a start screen). Time changes go to a draft
+ * that is written only on Save; reordering is saved right away.
  */
 @HiltViewModel
 class BoardViewModel @Inject constructor(
     private val boardRepository: BoardRepository,
     private val taskRepository: TaskRepository,
     private val settingsRepository: SettingsRepository,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val loadRequests = MutableStateFlow(0)
-    private val selectedTaskId = MutableStateFlow<Long?>(null)
+    private val edit = MutableStateFlow(EditSession.restore(savedStateHandle))
+    private val editStatus = MutableStateFlow(EditStatus())
     private val topRowIndex = MutableStateFlow<Int?>(null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -63,19 +65,49 @@ class BoardViewModel @Inject constructor(
     }
 
     fun onTaskTap(taskId: Long) {
-        selectedTaskId.value = taskId
+        if (edit.value != null) return
+        val task = ready?.tasks?.firstOrNull { it.id == taskId } ?: return
+        setEdit(EditSession.from(task))
     }
 
-    fun onEmptyTap() {
-        selectedTaskId.value = null
-    }
+    fun onEmptyTap() = requestClose()
+
+    fun onBack() = requestClose()
 
     fun onTaskScheduleChange(
         taskId: Long,
         schedule: TaskSchedule,
     ) {
-        val task = ready?.tasks?.firstOrNull { it.id == taskId } ?: return
-        write { taskRepository.saveTask(TaskEdit(task.id, task.title, schedule, task.colorIndex)) }
+        val session = edit.value ?: return
+        // Nothing may change the draft while it is being saved.
+        if (editStatus.value.isSaving || session.draft.taskId != taskId) return
+        setEdit(session.withSchedule(schedule))
+    }
+
+    fun onSave() {
+        val session = edit.value ?: return
+        if (editStatus.value.isSaving) return
+        editStatus.update { it.copy(isSaving = true, saveFailed = false) }
+        viewModelScope.launch {
+            try {
+                taskRepository.saveTask(session.draft)
+                endEditing()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Keep the draft and edit mode so the user can try again or discard.
+                editStatus.update { it.copy(isSaving = false, saveFailed = true) }
+            }
+        }
+    }
+
+    fun onDiscard() {
+        if (!editStatus.value.isSaving) endEditing()
+    }
+
+    /** Closes the dialog and goes back to editing with the draft kept. */
+    fun onCancelClose() {
+        if (!editStatus.value.isSaving) editStatus.value = EditStatus()
     }
 
     fun onTaskMove(
@@ -103,6 +135,23 @@ class BoardViewModel @Inject constructor(
         loadRequests.update { it + 1 }
     }
 
+    /** Ends editing right away when nothing changed; otherwise asks Save / Discard. */
+    private fun requestClose() {
+        val session = edit.value ?: return
+        if (editStatus.value.isSaving) return
+        if (session.isDirty) editStatus.value = EditStatus(confirmingClose = true) else endEditing()
+    }
+
+    private fun endEditing() {
+        setEdit(null)
+        editStatus.value = EditStatus()
+    }
+
+    private fun setEdit(session: EditSession?) {
+        edit.value = session
+        if (session == null) EditSession.clear(savedStateHandle) else session.save(savedStateHandle)
+    }
+
     private fun load(): Flow<BoardUiState> = flow {
         val boardId = boardRepository.getStartBoardId()
         if (boardId == null) {
@@ -115,15 +164,16 @@ class BoardViewModel @Inject constructor(
                 boardRepository.observeBoard(boardId),
                 taskRepository.observeTasks(boardId),
                 settingsRepository.observeSettings(),
-                selectedTaskId,
-            ) { board, tasks, settings, selectedTaskId ->
-                if (board == null) BoardUiState.Error else BoardUiState.Ready(board, tasks, settings, selectedTaskId)
+                edit,
+                editStatus,
+            ) { board, tasks, settings, edit, editStatus ->
+                if (board == null) BoardUiState.Error else BoardUiState.Ready(board, tasks, settings, edit, editStatus)
             },
         )
     }.onStart { emit(BoardUiState.Loading) }
         .catch { emit(BoardUiState.Error) }
 
-    // Step 4 does not surface write failures yet; the screen keeps showing what the database has.
+    // Reorder, zoom and pane writes do not surface failures; the screen keeps showing what the database has.
     private fun write(block: suspend () -> Unit) {
         viewModelScope.launch { ignoreFailure(block) }
     }

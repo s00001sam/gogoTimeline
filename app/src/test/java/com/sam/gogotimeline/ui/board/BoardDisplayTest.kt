@@ -7,6 +7,7 @@ import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.at
 import com.sam.gogotimeline.data.model.Task
+import com.sam.gogotimeline.data.model.TaskEdit
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -72,5 +73,32 @@ class BoardDisplayTest {
     @Test
     fun noTasksOpenOnNowCentered() {
         assertEquals(OpeningPosition(rowIndex = 0, time = now, centered = true), openingPosition(emptyList(), 1, now))
+    }
+
+    private val domainTasks = (1L..3L).map { task(it, TaskSchedule.Timed(kickoff)) }
+    private val later = TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T13:00"), TAIPEI.at("2026-10-31T14:30")))
+
+    @Test
+    fun draftReplacesOnlyItsTask() {
+        val shown = tasksWithDraft(domainTasks, TaskEdit(2, "Renamed", later, colorIndex = 5))
+        assertEquals(listOf(1L, 2L, 3L), shown.map { it.id })
+        assertEquals(
+            TaskEdit(2, "Renamed", later, 5),
+            shown[1].let {
+                TaskEdit(it.id, it.title, it.schedule, it.colorIndex)
+            },
+        )
+        assertEquals(domainTasks[0], shown[0])
+        assertEquals(domainTasks[2], shown[2])
+    }
+
+    @Test
+    fun noDraftKeepsTheTasks() {
+        assertEquals(domainTasks, tasksWithDraft(domainTasks, draft = null))
+    }
+
+    @Test
+    fun draftOfAMissingTaskKeepsTheTasks() {
+        assertEquals(domainTasks, tasksWithDraft(domainTasks, TaskEdit(99, "Gone", later, 0)))
     }
 }
