@@ -16,6 +16,14 @@ object SampleData {
     private const val COLOR_COUNT = 7
     private const val SPRINT_DAYS = 14L
 
+    /** Task number (1-based) to its notes; the rest stay empty so both cases show. */
+    private val notes = mapOf(
+        1 to "Agenda: goals, roles, timeline",
+        5 to "Ship the timeline and task sheet.",
+        11 to "Five participants, 30 minutes each.\nRecord sessions.",
+        15 to "Flight AM, hotel near venue.",
+    )
+
     /** Task number (1-based) to hours before now when it was last edited; others were never edited. */
     private val editedHoursAgo = mapOf(2 to 10L, 5 to 8L, 8 to 6L, 11 to 4L, 14 to 2L)
 
@@ -73,6 +81,7 @@ object SampleData {
                 sortOrder = index,
                 createdAt = createdAt,
                 updatedAt = editedHoursAgo[number]?.let { now - JavaTimeUnit.HOURS.toMillis(it) } ?: createdAt,
+                notes = notes[number].orEmpty(),
             )
         }
     }

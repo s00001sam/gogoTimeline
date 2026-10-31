@@ -30,6 +30,7 @@ class EditSessionTest {
         sortOrder = 0,
         createdAt = TAIPEI.at("2026-10-16T09:00"),
         updatedAt = TAIPEI.at("2026-10-20T09:00"),
+        notes = "Agenda: goals, roles, timeline",
     )
 
     private fun EditSession.roundTrip(): EditSession? = SavedStateHandle().also {
@@ -67,8 +68,13 @@ class EditSessionTest {
     @Test
     fun allDayBefore1970AndUnicodeTitlesSurvive() {
         val newYearsEve = TaskSchedule.AllDay(DateRange(LocalDate.of(1969, 12, 31), LocalDate.of(1970, 1, 1)))
-        val session = EditSession.from(task(title = "跨年 🎆", schedule = newYearsEve))
+        val session = EditSession.from(task(title = "跨年 🎆", schedule = newYearsEve)).withNotes("倒數\n  - 煙火 🎆\n")
         assertEquals(session, session.roundTrip())
+    }
+
+    @Test
+    fun newNotesMakeItDirty() {
+        assertTrue(EditSession.from(task()).withNotes("Bring laptops").isDirty)
     }
 
     @Test

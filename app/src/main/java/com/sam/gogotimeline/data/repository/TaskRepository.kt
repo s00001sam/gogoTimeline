@@ -14,6 +14,7 @@ interface TaskRepository {
         title: String,
         schedule: TaskSchedule,
         colorIndex: Int,
+        notes: String,
     ): Long
 
     /** Writes only when something changed; throws if the task no longer exists. */

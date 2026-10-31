@@ -1,5 +1,6 @@
 package com.sam.gogotimeline.data.repository
 
+import com.sam.gogotimeline.core.text.TaskNotes
 import com.sam.gogotimeline.core.text.TaskTitle
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.data.datasource.BoardLocalDataSource
@@ -29,12 +30,15 @@ class TaskRepositoryImpl @Inject constructor(
         title: String,
         schedule: TaskSchedule,
         colorIndex: Int,
+        notes: String,
     ): Long = transaction.run {
         require(TaskTitle.isValid(title)) { "Invalid task name" }
+        require(TaskNotes.isValid(notes)) { "Notes too long" }
         val now = clock.millis()
         val task = TaskEntity(
             boardId = boardId,
             title = title.trim(),
+            notes = TaskNotes.normalize(notes),
             startTime = 0,
             endTime = 0,
             colorIndex = colorIndex,
@@ -50,9 +54,11 @@ class TaskRepositoryImpl @Inject constructor(
         transaction.run {
             // The sheet checks the name too; checking here keeps bad names out whoever saves.
             require(TaskTitle.isValid(edit.title)) { "Invalid task name" }
+            require(TaskNotes.isValid(edit.notes)) { "Notes too long" }
             val current = checkNotNull(taskDataSource.getTask(edit.taskId)) { "Task ${edit.taskId} no longer exists" }
             val edited = current.copy(
                 title = edit.title.trim(),
+                notes = TaskNotes.normalize(edit.notes),
                 colorIndex = edit.colorIndex,
             ).withSchedule(edit.schedule)
             if (edited != current) taskDataSource.update(edited.copy(updatedAt = clock.millis()))

@@ -17,6 +17,7 @@
     <string name="close">Close</string>
     <string name="close_editor">Close editor</string>
     <string name="task_name">Task name</string>
+    <string name="notes">Notes</string>
     <string name="start">Start</string>
     <string name="end">End</string>
     <string name="color_red">Red</string>

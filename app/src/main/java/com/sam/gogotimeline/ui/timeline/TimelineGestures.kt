@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -82,6 +83,7 @@ internal fun Modifier.timelineGestures(
             var dragging = false
             var ignoreRest = false
             var pinched = false
+            var cancelled = false
             var direction: DragDirection? = null
             var totalMove = Offset.Zero
 
@@ -99,7 +101,10 @@ internal fun Modifier.timelineGestures(
                         continue
                     }
                     val pressedCount = event.changes.count { it.pressed }
-                    if (pressedCount == 0) break
+                    if (pressedCount == 0) {
+                        cancelled = wasCancelled(event)
+                        break
+                    }
                     if (pressedCount >= 2) {
                         // A second finger is ignored while a task is being dragged.
                         if (!dragging) {
@@ -158,6 +163,9 @@ internal fun Modifier.timelineGestures(
 
             val locked = direction
             when {
+                // The system took the touch (e.g. an edge back swipe): not a tap, fling, or drop.
+                cancelled -> if (dragging) callbacks.onDragCancel()
+
                 dragging -> callbacks.onDragEnd()
 
                 pinched -> callbacks.onZoomEnd()
@@ -180,6 +188,14 @@ internal fun Modifier.timelineGestures(
         }
     }
 }
+
+/**
+ * True when all fingers "lifted" because the system took the touch (e.g. an edge back swipe) rather than a real
+ * release: Compose reports a cancel as a release that keeps the previous event's time, while a real release is
+ * always later than the event before it.
+ */
+internal fun wasCancelled(event: PointerEvent): Boolean =
+    event.changes.isNotEmpty() && event.changes.all { !it.pressed && it.uptimeMillis == it.previousUptimeMillis }
 
 /** What a drag does once its direction locks; null means scroll (or nothing after a long press). */
 internal fun dragKind(

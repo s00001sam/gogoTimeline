@@ -37,19 +37,14 @@ internal fun openingPosition(
     return OpeningPosition(rowIndex = index, time = tasks[index].start, centered = false)
 }
 
-/** The tasks to draw: the database tasks with the draft's title, times and color laid over its task. */
+/** The tasks to draw: the database tasks with the draft's title, times, color and notes laid over its task. */
 internal fun tasksWithDraft(
     tasks: List<Task>,
     draft: TaskEdit?,
 ): List<Task> {
     if (draft == null) return tasks
-    return tasks.map {
-        if (it.id ==
-            draft.taskId
-        ) {
-            it.copy(title = draft.title, schedule = draft.schedule, colorIndex = draft.colorIndex)
-        } else {
-            it
-        }
+    return tasks.map { task ->
+        if (task.id != draft.taskId) return@map task
+        task.copy(title = draft.title, schedule = draft.schedule, colorIndex = draft.colorIndex, notes = draft.notes)
     }
 }

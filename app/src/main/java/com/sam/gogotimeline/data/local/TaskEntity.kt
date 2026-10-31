@@ -32,4 +32,5 @@ data class TaskEntity(
     val sortOrder: Int,
     val createdAt: Long,
     val updatedAt: Long,
+    val notes: String = "",
 )

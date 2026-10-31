@@ -3,6 +3,7 @@ package com.sam.gogotimeline.ui.board
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sam.gogotimeline.core.text.TaskNotes
 import com.sam.gogotimeline.core.text.TaskTitle
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.ZoomLevel
@@ -90,6 +91,11 @@ class BoardViewModel @Inject constructor(
         if (!editStatus.value.isSaving) setEdit(session.withTitle(TaskTitle.clean(title)))
     }
 
+    fun onNotesChange(notes: String) {
+        val session = edit.value ?: return
+        if (!editStatus.value.isSaving) setEdit(session.withNotes(TaskNotes.limit(notes)))
+    }
+
     fun onColorChange(colorIndex: Int) {
         val session = edit.value ?: return
         if (!editStatus.value.isSaving) setEdit(session.withColor(colorIndex))
@@ -112,7 +118,10 @@ class BoardViewModel @Inject constructor(
         editStatus.update { it.copy(isSaving = true, saveFailed = false) }
         viewModelScope.launch {
             try {
-                taskRepository.saveTask(session.draft.copy(title = session.draft.title.trim()))
+                val draft = session.draft
+                taskRepository.saveTask(
+                    draft.copy(title = draft.title.trim(), notes = TaskNotes.normalize(draft.notes)),
+                )
                 endEditing()
             } catch (cancelled: CancellationException) {
                 throw cancelled

@@ -352,6 +352,28 @@ class BoardViewModelTest {
         saving.complete(Unit)
     }
 
+    @Test
+    fun notesChangeOnlyTheDraftAndCountAsAChange() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onNotesChange("Bring laptops")
+        assertEquals("Bring laptops", viewModel.ready.edit!!.draft.notes)
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        viewModel.onEmptyTap()
+        assertTrue(viewModel.ready.editStatus.confirmingClose)
+    }
+
+    @Test
+    fun confirmSavesNotesWithoutTrailingBlanks() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onNotesChange("Bring laptops\n\n")
+        viewModel.onConfirm()
+        coVerify {
+            taskRepository.saveTask(TaskEdit(B, "Task $B", b.schedule, colorIndex = 1, notes = "Bring laptops"))
+        }
+    }
+
     private companion object {
         const val BOARD = 1L
         const val A = 10L

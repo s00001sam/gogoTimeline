@@ -121,6 +121,7 @@ object LayoutConst {
     // Task sheet
     const val SHEET_PADDING_DP = 16f
     const val SHEET_TOP_PADDING_DP = 12f
+    const val SHEET_SHOW_MAX_FRAMES = 10
     const val SHEET_SPACING_DP = 8f
     const val SHEET_HANDLE_WIDTH_DP = 32f
     const val SHEET_HANDLE_HEIGHT_DP = 4f
@@ -132,6 +133,8 @@ object LayoutConst {
     const val NAME_FIELD_PADDING_HORIZONTAL_DP = 12f
     const val NAME_FIELD_PADDING_VERTICAL_DP = 8f
     const val NAME_FIELD_MAX_LINES = 2
+    const val NOTES_FIELD_MIN_LINES = 3
+    const val NOTES_FADE_MILLIS = 300
     const val COLOR_DOT_DP = 28f
     const val COLOR_RING_WIDTH_DP = 2f
     const val COLOR_RING_GAP_DP = 2f
@@ -199,6 +202,7 @@ object LayoutConst {
 
     // Names
     const val NAME_MAX_LENGTH = 40
+    const val NOTES_MAX_LENGTH = 500
 
     // Phone vs. tablet
     const val TABLET_MIN_WIDTH_DP = 600f

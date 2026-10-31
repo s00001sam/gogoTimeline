@@ -1,19 +1,33 @@
 package com.sam.gogotimeline.ui.sheet
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -22,6 +36,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -31,10 +47,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -45,17 +71,21 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
+import com.sam.gogotimeline.core.text.TaskNotes
 import com.sam.gogotimeline.core.text.TaskTitle
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
 import com.sam.gogotimeline.ui.theme.GogoTimelineTheme
+import kotlin.math.roundToInt
 
 /** What the task sheet shows; times are already formatted for the current time zone. */
 @Immutable
 data class TaskSheetState(
     val title: String,
+    val notes: String,
     val start: String,
     val end: String,
+    val isAllDay: Boolean,
     val colorIndex: Int,
     val canSave: Boolean,
     val isSaving: Boolean,
@@ -63,28 +93,107 @@ data class TaskSheetState(
 )
 
 /**
- * The collapsed task sheet: × at the top left, ✓ at the top right, then the name, times and colors. Everything
- * follows the system font size; the sheet measures its own height.
+ * The task sheet. The top part (× / ✓, name, times, All day, colors) shows while collapsed; dragging up opens the
+ * sheet to full screen below the status bar and shows the notes, which grow with their text while the whole sheet
+ * scrolls. The sheet can only expand by revealing content under the collapsed part, so it is as tall as the screen
+ * allows. [onCollapsedHeightChange] reports the peek height in px. Everything follows the system font size.
  */
 @Composable
 fun TaskSheet(
     modifier: Modifier = Modifier,
     state: TaskSheetState,
+    expanded: Boolean,
+    onTitleChange: (String) -> Unit,
+    onNotesChange: (String) -> Unit,
+    onColorChange: (Int) -> Unit,
+    onClose: () -> Unit,
+    onConfirm: () -> Unit,
+    onCollapsedHeightChange: (Int) -> Unit = {},
+) {
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
+    // The keyboard overlays the screen; the peek height is the larger of the usual collapsed height and "name field
+    // bottom + gap + keyboard", so a rising keyboard lifts the sheet until the name sits just above it and the rows
+    // below stay behind the keyboard. Read during composition: it follows the keyboard frame by frame.
+    val usualBottomPx = WindowInsets.navigationBars.getBottom(density) +
+        with(density) { LayoutConst.SHEET_PADDING_DP.dp.roundToPx() }
+    val keyboardPx = WindowInsets.ime.getBottom(density)
+    val gapPx = with(density) { LayoutConst.SHEET_SPACING_DP.dp.roundToPx() }
+    var collapsedPx by remember { mutableIntStateOf(0) }
+    var collapsedTopPx by remember { mutableFloatStateOf(0f) }
+    var nameBottomPx by remember { mutableFloatStateOf(0f) }
+    val usualPeekPx = collapsedPx + usualBottomPx
+    val nameAbovePeekPx = (nameBottomPx - collapsedTopPx).roundToInt() + gapPx + keyboardPx
+    // Computed here, not inside SideEffect: reads in composition make a new measurement recompose and report.
+    val peekPx = if (collapsedPx > 0) maxOf(usualPeekPx, nameAbovePeekPx) else 0
+    SideEffect { if (peekPx > 0) onCollapsedHeightChange(peekPx) }
+    val statusBarPx = WindowInsets.statusBars.getTop(density)
+    // Long notes scroll the whole sheet; back at the collapsed size it always shows the top part.
+    val scroll = rememberScrollState()
+    LaunchedEffect(expanded) { if (!expanded) scroll.scrollTo(0) }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        // Full height minus the status bar, so the expanded sheet stops right below it.
+        val fullHeight = if (constraints.hasBoundedHeight) {
+            Modifier.height(with(density) { (constraints.maxHeight - statusBarPx).coerceAtLeast(0).toDp() })
+        } else {
+            Modifier
+        }
+        Column(
+            modifier = fullHeight
+                .fillMaxWidth()
+                // The scrolling area ends at the keyboard, so a focused line is brought into view above it.
+                .windowInsetsPadding(
+                    WindowInsets.navigationBars.union(WindowInsets.ime).only(WindowInsetsSides.Bottom),
+                )
+                .verticalScroll(scroll)
+                // A tap on any empty part of the sheet leaves the text fields and closes the keyboard.
+                .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
+                .padding(horizontal = LayoutConst.SHEET_PADDING_DP.dp),
+        ) {
+            CollapsedPart(
+                modifier = Modifier.onGloballyPositioned {
+                    collapsedPx = it.size.height
+                    collapsedTopPx = it.positionInRoot().y
+                },
+                state = state,
+                onNameBottomInRoot = { nameBottomPx = it },
+                onTitleChange = onTitleChange,
+                onColorChange = onColorChange,
+                onClose = onClose,
+                onConfirm = onConfirm,
+            )
+            // Notes only while expanded (collapsed, its top would peek out through the bottom padding); fades in and out.
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(tween(LayoutConst.NOTES_FADE_MILLIS)),
+                exit = fadeOut(tween(LayoutConst.NOTES_FADE_MILLIS)),
+            ) {
+                NotesField(
+                    // Starts three lines tall and keeps growing with its text.
+                    modifier = Modifier.padding(top = LayoutConst.SHEET_SPACING_DP.dp),
+                    notes = state.notes,
+                    enabled = !state.isSaving,
+                    onNotesChange = onNotesChange,
+                )
+            }
+            Spacer(modifier = Modifier.height(LayoutConst.SHEET_PADDING_DP.dp))
+        }
+    }
+}
+
+@Composable
+private fun CollapsedPart(
+    modifier: Modifier = Modifier,
+    state: TaskSheetState,
+    onNameBottomInRoot: (Float) -> Unit,
     onTitleChange: (String) -> Unit,
     onColorChange: (Int) -> Unit,
     onClose: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
-    val focusManager = LocalFocusManager.current
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            // A tap on any empty part of the sheet leaves the name field and closes the keyboard.
-            .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
-            .navigationBarsPadding()
-            .padding(horizontal = LayoutConst.SHEET_PADDING_DP.dp)
-            .padding(top = LayoutConst.SHEET_TOP_PADDING_DP.dp, bottom = LayoutConst.SHEET_PADDING_DP.dp),
+        modifier = modifier.padding(top = LayoutConst.SHEET_TOP_PADDING_DP.dp),
         verticalArrangement = Arrangement.spacedBy(LayoutConst.SHEET_SPACING_DP.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -133,7 +242,14 @@ fun TaskSheet(
                 }
             }
         }
-        NameField(title = state.title, enabled = !state.isSaving, onTitleChange = onTitleChange)
+        NameField(
+            modifier = Modifier.onGloballyPositioned {
+                onNameBottomInRoot(it.positionInRoot().y + it.size.height)
+            },
+            title = state.title,
+            enabled = !state.isSaving,
+            onTitleChange = onTitleChange,
+        )
         if (state.saveFailed) {
             Text(
                 text = stringResource(R.string.save_failed),
@@ -143,6 +259,7 @@ fun TaskSheet(
         }
         TimeLine(label = stringResource(R.string.start), value = state.start)
         TimeLine(label = stringResource(R.string.end), value = state.end)
+        AllDayLine(checked = state.isAllDay)
         ColorPicker(selected = state.colorIndex, enabled = !state.isSaving, onSelect = onColorChange)
     }
 }
@@ -150,6 +267,7 @@ fun TaskSheet(
 /** A filled, borderless name field showing up to two lines; Done only closes the keyboard. */
 @Composable
 private fun NameField(
+    modifier: Modifier = Modifier,
     title: String,
     enabled: Boolean,
     onTitleChange: (String) -> Unit,
@@ -160,7 +278,7 @@ private fun NameField(
     BasicTextField(
         value = title,
         onValueChange = onTitleChange,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .semantics { contentDescription = placeholder },
         enabled = enabled,
@@ -170,37 +288,95 @@ private fun NameField(
         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         cursorBrush = SolidColor(colorScheme.primary),
         decorationBox = { innerTextField ->
-            Row(
-                modifier = Modifier
-                    .background(
-                        colorScheme.surfaceContainerHigh,
-                        RoundedCornerShape(LayoutConst.NAME_FIELD_CORNER_DP.dp),
-                    )
-                    .padding(
-                        horizontal = LayoutConst.NAME_FIELD_PADDING_HORIZONTAL_DP.dp,
-                        vertical = LayoutConst.NAME_FIELD_PADDING_VERTICAL_DP.dp,
-                    ),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    if (title.isEmpty()) {
-                        Text(
-                            text = placeholder,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    innerTextField()
-                }
+            FilledField(
+                placeholder = placeholder.takeIf { title.isEmpty() },
+                counter = "${TaskTitle.length(title.trim())}/${LayoutConst.NAME_MAX_LENGTH}",
+                innerTextField = innerTextField,
+            )
+        },
+    )
+}
+
+/** Multi-line notes in the same filled style as the name; starts three lines tall and grows with its text. */
+@Composable
+private fun NotesField(
+    modifier: Modifier = Modifier,
+    notes: String,
+    enabled: Boolean,
+    onNotesChange: (String) -> Unit,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val placeholder = stringResource(R.string.notes)
+    BasicTextField(
+        value = notes,
+        onValueChange = onNotesChange,
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = placeholder },
+        enabled = enabled,
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
+        minLines = LayoutConst.NOTES_FIELD_MIN_LINES,
+        cursorBrush = SolidColor(colorScheme.primary),
+        decorationBox = { innerTextField ->
+            FilledField(
+                placeholder = placeholder.takeIf { notes.isEmpty() },
+                counter = "${TaskNotes.length(TaskNotes.normalize(notes))}/${LayoutConst.NOTES_MAX_LENGTH}",
+                innerTextField = innerTextField,
+            )
+        },
+    )
+}
+
+/** The borderless filled box shared by the name and notes fields, with the character count at the bottom right. */
+@Composable
+private fun FilledField(
+    placeholder: String?,
+    counter: String,
+    innerTextField: @Composable () -> Unit,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    // Text starts at the top left; the count stays at the bottom right as the field grows.
+    Row(
+        modifier = Modifier
+            .background(colorScheme.surfaceContainerHigh, RoundedCornerShape(LayoutConst.NAME_FIELD_CORNER_DP.dp))
+            .padding(
+                horizontal = LayoutConst.NAME_FIELD_PADDING_HORIZONTAL_DP.dp,
+                vertical = LayoutConst.NAME_FIELD_PADDING_VERTICAL_DP.dp,
+            ),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(modifier = Modifier.weight(1f)) {
+            if (placeholder != null) {
                 Text(
-                    text = "${TaskTitle.length(title.trim())}/${LayoutConst.NAME_MAX_LENGTH}",
-                    modifier = Modifier.padding(start = LayoutConst.SHEET_SPACING_DP.dp),
-                    style = MaterialTheme.typography.labelSmall,
+                    text = placeholder,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = colorScheme.onSurfaceVariant,
                 )
             }
-        },
-    )
+            innerTextField()
+        }
+        Text(
+            text = counter,
+            modifier = Modifier
+                .align(Alignment.Bottom)
+                .padding(start = LayoutConst.SHEET_SPACING_DP.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Shows whether the task is all-day; toggling it by hand, with its own time rules, comes in step 5-3b. */
+@Composable
+private fun AllDayLine(checked: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = false)
+        Text(
+            text = stringResource(R.string.all_day),
+            modifier = Modifier.padding(start = LayoutConst.SHEET_SPACING_DP.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }
 
 @Composable
@@ -290,8 +466,10 @@ private val colorNames = listOf(
 
 private val previewState = TaskSheetState(
     title = "Kickoff meeting",
+    notes = "Agenda: goals, roles, timeline",
     start = "Fri, Oct 31  09:00",
     end = "Fri, Oct 31  10:30",
+    isAllDay = false,
     colorIndex = 0,
     canSave = true,
     isSaving = false,
@@ -299,15 +477,30 @@ private val previewState = TaskSheetState(
 )
 
 @Composable
-private fun SheetPreview(state: TaskSheetState) {
+private fun SheetPreview(
+    state: TaskSheetState,
+    expanded: Boolean = true,
+) {
     PreviewSurface {
-        TaskSheet(state = state, onTitleChange = {}, onColorChange = {}, onClose = {}, onConfirm = {})
+        TaskSheet(
+            state = state,
+            expanded = expanded,
+            onTitleChange = {},
+            onNotesChange = {},
+            onColorChange = {},
+            onClose = {},
+            onConfirm = {},
+        )
     }
 }
 
 @ThemePreviews
 @Composable
 private fun TaskSheetPreview() = SheetPreview(previewState)
+
+@ThemePreviews
+@Composable
+private fun TaskSheetCollapsedPreview() = SheetPreview(previewState, expanded = false)
 
 @ThemePreviews
 @Composable
@@ -325,4 +518,4 @@ private fun TaskSheetFailedPreview() = SheetPreview(previewState.copy(saveFailed
 @ThemePreviews
 @Composable
 private fun TaskSheetAllDayPreview() =
-    SheetPreview(previewState.copy(start = "Sat, Nov 7", end = "Sat, Nov 7", colorIndex = 5))
+    SheetPreview(previewState.copy(start = "Sat, Nov 7", end = "Sat, Nov 7", isAllDay = true, colorIndex = 5))

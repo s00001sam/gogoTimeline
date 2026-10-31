@@ -21,39 +21,44 @@ data class EditSession(
 
     fun withColor(colorIndex: Int): EditSession = copy(draft = draft.copy(colorIndex = colorIndex))
 
+    fun withNotes(notes: String): EditSession = copy(draft = draft.copy(notes = notes))
+
     /**
      * Kept in [SavedStateHandle] because losing a draft loses the user's changes when the app is killed in the
-     * background. [TaskSchedule] is not storable, so each edit becomes numbers plus its title.
+     * background. [TaskSchedule] is not storable, so each edit becomes numbers plus its title and notes.
      */
     fun save(handle: SavedStateHandle) {
         handle[KEY_ORIGINAL] = original.encode()
         handle[KEY_DRAFT] = draft.encode()
-        handle[KEY_TITLES] = arrayOf(original.title, draft.title)
+        handle[KEY_TEXTS] = arrayOf(original.title, draft.title, original.notes, draft.notes)
     }
 
     companion object {
         private const val KEY_ORIGINAL = "edit.original"
         private const val KEY_DRAFT = "edit.draft"
-        private const val KEY_TITLES = "edit.titles"
+        private const val KEY_TEXTS = "edit.texts"
         private const val TIMED = 0L
         private const val ALL_DAY = 1L
 
         fun from(task: Task): EditSession {
-            val edit = TaskEdit(task.id, task.title, task.schedule, task.colorIndex)
+            val edit = TaskEdit(task.id, task.title, task.schedule, task.colorIndex, task.notes)
             return EditSession(original = edit, draft = edit)
         }
 
         fun restore(handle: SavedStateHandle): EditSession? {
             val original = handle.get<LongArray>(KEY_ORIGINAL) ?: return null
             val draft = handle.get<LongArray>(KEY_DRAFT) ?: return null
-            val titles = handle.get<Array<String>>(KEY_TITLES) ?: return null
-            return EditSession(original = decode(original, titles[0]), draft = decode(draft, titles[1]))
+            val texts = handle.get<Array<String>>(KEY_TEXTS) ?: return null
+            return EditSession(
+                original = decode(original, title = texts[0], notes = texts[2]),
+                draft = decode(draft, title = texts[1], notes = texts[3]),
+            )
         }
 
         fun clear(handle: SavedStateHandle) {
             handle.remove<LongArray>(KEY_ORIGINAL)
             handle.remove<LongArray>(KEY_DRAFT)
-            handle.remove<Array<String>>(KEY_TITLES)
+            handle.remove<Array<String>>(KEY_TEXTS)
         }
 
         // All-day dates are stored as epoch days, so they read back as the same dates in any time zone.
@@ -78,6 +83,7 @@ data class EditSession(
         private fun decode(
             numbers: LongArray,
             title: String,
+            notes: String,
         ): TaskEdit {
             val (taskId, colorIndex, kind, start, end) = numbers
             val schedule = if (kind == ALL_DAY) {
@@ -85,7 +91,7 @@ data class EditSession(
             } else {
                 TaskSchedule.Timed(TimeRange(start, end))
             }
-            return TaskEdit(taskId, title, schedule, colorIndex.toInt())
+            return TaskEdit(taskId, title, schedule, colorIndex.toInt(), notes)
         }
     }
 }

@@ -8,8 +8,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,11 +39,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -116,15 +120,15 @@ fun BoardScreen(
         opened = true
     }
 
-    BackHandler(enabled = ready?.edit != null) { viewModel.onBack() }
-
     val sheet = remember(ready?.edit, ready?.editStatus, calendar) {
         val edit = ready?.edit ?: return@remember null
         val (start, end) = TaskTimeFormat.sheetTimes(edit.draft.schedule, calendar)
         TaskSheetState(
             title = edit.draft.title,
+            notes = edit.draft.notes,
             start = start,
             end = end,
+            isAllDay = edit.draft.schedule is TaskSchedule.AllDay,
             colorIndex = edit.draft.colorIndex,
             canSave = ready.canSave,
             isSaving = ready.editStatus.isSaving,
@@ -163,6 +167,7 @@ fun BoardScreen(
         onZoomChange = viewModel::onZoomChange,
         sheet = sheet,
         onTitleChange = viewModel::onTitleChange,
+        onNotesChange = viewModel::onNotesChange,
         onColorChange = viewModel::onColorChange,
         onCloseEditor = viewModel::onBack,
         onConfirmEdit = viewModel::onConfirm,
@@ -181,7 +186,7 @@ fun BoardScreen(
 }
 
 /** While loading or after an error, the scheduler is a skeleton under an overlay that blocks touches. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BoardContent(
     modifier: Modifier = Modifier,
@@ -201,29 +206,28 @@ fun BoardContent(
     onZoomChange: (ZoomLevel) -> Unit = {},
     sheet: TaskSheetState? = null,
     onTitleChange: (String) -> Unit = {},
+    onNotesChange: (String) -> Unit = {},
     onColorChange: (Int) -> Unit = {},
     onCloseEditor: () -> Unit = {},
     onConfirmEdit: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val interactive = !isLoading && !isError
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     // The sheet stays hidden until a task is edited; it keeps the last content while it slides away.
     val currentEditing by rememberUpdatedState(sheet != null)
     val currentOnCloseEditor by rememberUpdatedState(onCloseEditor)
     val sheetState = rememberStandardBottomSheetState(
         initialValue = SheetValue.Hidden,
-        // A swipe down acts like ×: the sheet snaps back and the close flow decides (it may ask Save / Discard).
-        // Expanding arrives with the full fields in step 5-3.
+        // A swipe down from collapsed acts like ×: the sheet snaps back and the close flow decides (it may ask
+        // Save / Discard). Dragging up expands to show the notes.
         confirmValueChange = { value ->
-            when (value) {
-                SheetValue.Hidden -> {
-                    if (currentEditing) currentOnCloseEditor()
-                    !currentEditing
-                }
-
-                SheetValue.Expanded -> false
-
-                SheetValue.PartiallyExpanded -> true
+            if (value == SheetValue.Hidden) {
+                if (currentEditing) currentOnCloseEditor()
+                !currentEditing
+            } else {
+                true
             }
         },
         skipHiddenState = false,
@@ -233,11 +237,51 @@ fun BoardContent(
     if (sheet != null) shownSheet = sheet
     val editing = sheet != null
     var sheetHeightPx by remember { mutableIntStateOf(0) }
-    // Shows the sheet only once its content is measured: with a 0 peek height it would settle off screen.
-    LaunchedEffect(editing, sheetHeightPx) {
+    val sheetMeasured = sheetHeightPx > 0
+    // Shows the sheet once per edit, after its collapsed part is measured. The peek height reaches the scaffold a
+    // few frames later and asking before that is ignored, so it asks again each frame until the sheet is shown.
+    // Later height changes (keyboard, font size, an error line) only move the anchor; the scaffold follows them
+    // frame by frame, so no second animation runs.
+    LaunchedEffect(editing, sheetMeasured) {
         when {
-            !editing -> sheetState.hide()
-            sheetHeightPx > 0 -> sheetState.partialExpand()
+            // No sheet, no keyboard: whatever ended editing, the text fields lose focus first.
+            !editing -> {
+                focusManager.clearFocus(force = true)
+                keyboard?.hide()
+                sheetState.hide()
+            }
+
+            sheetMeasured -> repeat(LayoutConst.SHEET_SHOW_MAX_FRAMES) {
+                if (sheetState.currentValue != SheetValue.Hidden) return@LaunchedEffect
+                withFrameNanos {}
+                sheetState.partialExpand()
+            }
+        }
+    }
+    // Going from expanded to collapsed always closes the keyboard, whether it was for the name or the notes.
+    LaunchedEffect(sheetState) {
+        var previous = sheetState.targetValue
+        snapshotFlow { sheetState.targetValue }.collect { target ->
+            if (previous == SheetValue.Expanded && target == SheetValue.PartiallyExpanded) {
+                focusManager.clearFocus(force = true)
+                keyboard?.hide()
+            }
+            previous = target
+        }
+    }
+    // Back: with the keyboard open only the keyboard closes; expanded collapses; collapsed acts like ×. Handled here
+    // rather than left to the system, because some keyboards do not consume back and the app would close.
+    val keyboardOpen = WindowInsets.isImeVisible
+    BackHandler(enabled = editing) {
+        when {
+            keyboardOpen -> {
+                keyboard?.hide()
+                focusManager.clearFocus()
+            }
+
+            sheetState.currentValue == SheetValue.Expanded -> scope.launch { sheetState.partialExpand() }
+
+            else -> onCloseEditor()
         }
     }
     val paneWidth by animateDpAsState(
@@ -245,22 +289,25 @@ fun BoardContent(
         animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
         label = "leftPaneWidth",
     )
+    // The keyboard overlays the screen instead of shrinking it: a changing screen height made the scaffold
+    // re-place the sheet a frame late. The sheet lifts itself above the keyboard through its peek height.
     BottomSheetScaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .imePadding(),
+        modifier = modifier.fillMaxSize(),
         scaffoldState = scaffoldState,
         sheetPeekHeight = with(LocalDensity.current) { sheetHeightPx.toDp() },
         sheetDragHandle = null,
         sheetContent = {
             shownSheet?.let {
                 TaskSheet(
-                    modifier = Modifier.onSizeChanged { size -> sheetHeightPx = size.height },
                     state = it,
+                    expanded = sheetState.targetValue == SheetValue.Expanded ||
+                        sheetState.currentValue == SheetValue.Expanded,
                     onTitleChange = onTitleChange,
+                    onNotesChange = onNotesChange,
                     onColorChange = onColorChange,
                     onClose = onCloseEditor,
                     onConfirm = onConfirmEdit,
+                    onCollapsedHeightChange = { sheetHeightPx = it },
                 )
             }
         },
@@ -465,8 +512,10 @@ private fun BoardEditingPreview() {
         selectedTaskId = 1L,
         sheet = TaskSheetState(
             title = "Kickoff meeting",
+            notes = "Agenda: goals, roles, timeline",
             start = "Fri, Oct 30  09:00",
             end = "Fri, Oct 30  10:30",
+            isAllDay = false,
             colorIndex = 0,
             canSave = true,
             isSaving = false,

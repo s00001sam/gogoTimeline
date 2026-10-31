@@ -12,6 +12,7 @@ data class Task(
     val sortOrder: Int,
     val createdAt: Long,
     val updatedAt: Long,
+    val notes: String = "",
 )
 
 /** What to save for an existing task. Order and timestamps are decided by the repository. */
@@ -20,4 +21,5 @@ data class TaskEdit(
     val title: String,
     val schedule: TaskSchedule,
     val colorIndex: Int,
+    val notes: String = "",
 )

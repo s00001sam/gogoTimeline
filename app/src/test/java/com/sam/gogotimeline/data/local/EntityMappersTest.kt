@@ -30,6 +30,7 @@ class EntityMappersTest {
         sortOrder = 6,
         createdAt = createdAt,
         updatedAt = updatedAt,
+        notes = "Order the vegetarian set.\nBook a table for 4.",
     )
 
     private val releaseDay = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 11, 7), LocalDate.of(2026, 11, 8)))

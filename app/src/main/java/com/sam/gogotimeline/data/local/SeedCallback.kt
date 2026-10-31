@@ -47,6 +47,7 @@ private fun BoardEntity.toValues() = ContentValues().apply {
 private fun TaskEntity.toValues() = ContentValues().apply {
     put("boardId", boardId)
     put("title", title)
+    put("notes", notes)
     put("startTime", startTime)
     put("endTime", endTime)
     put("colorIndex", colorIndex)

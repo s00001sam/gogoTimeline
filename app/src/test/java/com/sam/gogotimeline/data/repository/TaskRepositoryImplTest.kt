@@ -48,6 +48,7 @@ class TaskRepositoryImplTest {
         sortOrder = order,
         createdAt = TAIPEI.at("2026-10-16T09:00"),
         updatedAt = TAIPEI.at("2026-10-20T09:00"),
+        notes = NOTES,
     )
 
     private fun givenTask(order: Int?) {
@@ -55,7 +56,8 @@ class TaskRepositoryImplTest {
         coEvery { tasks.maxSortOrder(BOARD) } returns 14
     }
 
-    private fun edit(range: TimeRange) = TaskEdit(TASK, "Kickoff meeting", TaskSchedule.Timed(range), colorIndex = 0)
+    private fun edit(range: TimeRange) =
+        TaskEdit(TASK, "Kickoff meeting", TaskSchedule.Timed(range), colorIndex = 0, notes = NOTES)
 
     @Test
     fun moveDownShiftsTheRowsInBetweenUp() = runTest {
@@ -100,10 +102,17 @@ class TaskRepositoryImplTest {
         val inserted = slot<TaskEntity>()
         coEvery { tasks.insert(capture(inserted)) } returns 16
 
-        val id = repository.createTask(BOARD, "Demo", TaskSchedule.Timed(kickoff), colorIndex = 3)
+        val id = repository.createTask(
+            BOARD,
+            "Demo",
+            TaskSchedule.Timed(kickoff),
+            colorIndex = 3,
+            notes = "  Bring laptops\n\n",
+        )
 
         assertEquals(16, id)
         assertEquals(15, inserted.captured.sortOrder)
+        assertEquals("  Bring laptops", inserted.captured.notes)
         assertEquals(now, inserted.captured.createdAt)
         assertEquals(now, inserted.captured.updatedAt)
     }
@@ -158,7 +167,7 @@ class TaskRepositoryImplTest {
         coEvery { tasks.maxSortOrder(BOARD) } returns null
         val inserted = slot<TaskEntity>()
         coEvery { tasks.insert(capture(inserted)) } returns 1
-        repository.createTask(BOARD, "First", TaskSchedule.Timed(kickoff), colorIndex = 0)
+        repository.createTask(BOARD, "First", TaskSchedule.Timed(kickoff), colorIndex = 0, notes = "")
         assertEquals(0, inserted.captured.sortOrder)
     }
 
@@ -213,13 +222,31 @@ class TaskRepositoryImplTest {
         val result = runCatching { repository.saveTask(TaskEdit(TASK, "   ", TaskSchedule.Timed(kickoff), 0)) }
         assertTrue(result.exceptionOrNull() is IllegalArgumentException)
         coVerify(exactly = 0) { tasks.update(any()) }
-        val created = runCatching { repository.createTask(BOARD, "", TaskSchedule.Timed(kickoff), 0) }
+        val created = runCatching { repository.createTask(BOARD, "", TaskSchedule.Timed(kickoff), 0, notes = "") }
         assertTrue(created.exceptionOrNull() is IllegalArgumentException)
         coVerify(exactly = 0) { tasks.insert(any()) }
+    }
+
+    @Test
+    fun changedNotesAreSavedWithoutTrailingBlanks() = runTest {
+        givenTask(order = 0)
+        val saved = slot<TaskEntity>()
+        coEvery { tasks.update(capture(saved)) } answers {}
+        repository.saveTask(edit(kickoff).copy(notes = "Agenda\n  - goals\n\n"))
+        assertEquals("Agenda\n  - goals", saved.captured.notes)
+    }
+
+    @Test
+    fun notesOfFiveHundredOneCharactersAreRejected() = runTest {
+        givenTask(order = 0)
+        val result = runCatching { repository.saveTask(edit(kickoff).copy(notes = "a".repeat(501))) }
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+        coVerify(exactly = 0) { tasks.update(any()) }
     }
 
     private companion object {
         const val BOARD = 1L
         const val TASK = 10L
+        const val NOTES = "Agenda: goals, roles, timeline"
     }
 }

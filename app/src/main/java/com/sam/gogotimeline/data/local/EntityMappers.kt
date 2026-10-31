@@ -26,6 +26,7 @@ fun TaskEntity.toDomain(): Task = Task(
     sortOrder = sortOrder,
     createdAt = createdAt,
     updatedAt = updatedAt,
+    notes = notes,
 )
 
 fun Task.toEntity(): TaskEntity = TaskEntity(
@@ -39,6 +40,7 @@ fun Task.toEntity(): TaskEntity = TaskEntity(
     sortOrder = sortOrder,
     createdAt = createdAt,
     updatedAt = updatedAt,
+    notes = notes,
 ).withSchedule(schedule)
 
 /** Replaces only the three time columns; all-day dates are stored as UTC 00:00 so every zone reads the same dates. */
