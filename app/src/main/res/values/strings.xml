@@ -15,5 +15,16 @@
     <string name="save">Save</string>
     <string name="discard">Discard</string>
     <string name="close">Close</string>
+    <string name="close_editor">Close editor</string>
+    <string name="task_name">Task name</string>
+    <string name="start">Start</string>
+    <string name="end">End</string>
+    <string name="color_red">Red</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_green">Green</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_indigo">Indigo</string>
+    <string name="color_violet">Violet</string>
     <string name="save_failed">Couldn’t save changes. Please try again.</string>
 </resources>

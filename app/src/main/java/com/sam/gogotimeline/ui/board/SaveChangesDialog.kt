@@ -35,6 +35,7 @@ import com.sam.gogotimeline.ui.preview.ThemePreviews
  */
 @Composable
 internal fun SaveChangesDialog(
+    canSave: Boolean,
     isSaving: Boolean,
     saveFailed: Boolean,
     onSave: () -> Unit,
@@ -46,6 +47,7 @@ internal fun SaveChangesDialog(
         properties = DialogProperties(dismissOnBackPress = !isSaving, dismissOnClickOutside = !isSaving),
     ) {
         SaveChangesContent(
+            canSave = canSave,
             isSaving = isSaving,
             saveFailed = saveFailed,
             onSave = onSave,
@@ -57,6 +59,7 @@ internal fun SaveChangesDialog(
 
 @Composable
 private fun SaveChangesContent(
+    canSave: Boolean,
     isSaving: Boolean,
     saveFailed: Boolean,
     onSave: () -> Unit,
@@ -105,7 +108,7 @@ private fun SaveChangesContent(
                 ) {
                     Text(stringResource(R.string.discard))
                 }
-                TextButton(onClick = onSave, enabled = !isSaving) {
+                TextButton(onClick = onSave, enabled = canSave) {
                     if (isSaving) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(LayoutConst.SAVE_PROGRESS_SIZE_DP.dp),
@@ -125,7 +128,8 @@ private fun SaveChangesContent(
 @Composable
 private fun SaveChangesDialogPreview() {
     PreviewSurface {
-        SaveChangesContent(isSaving = false, saveFailed = false, onSave = {}, onDiscard = {}, onCancel = {})
+        SaveChangesContent(canSave = true, isSaving = false, saveFailed = false, onSave = {
+        }, onDiscard = {}, onCancel = {})
     }
 }
 
@@ -133,7 +137,8 @@ private fun SaveChangesDialogPreview() {
 @Composable
 private fun SaveChangesDialogSavingPreview() {
     PreviewSurface {
-        SaveChangesContent(isSaving = true, saveFailed = false, onSave = {}, onDiscard = {}, onCancel = {})
+        SaveChangesContent(canSave = false, isSaving = true, saveFailed = false, onSave = {
+        }, onDiscard = {}, onCancel = {})
     }
 }
 
@@ -141,6 +146,7 @@ private fun SaveChangesDialogSavingPreview() {
 @Composable
 private fun SaveChangesDialogFailedPreview() {
     PreviewSurface {
-        SaveChangesContent(isSaving = false, saveFailed = true, onSave = {}, onDiscard = {}, onCancel = {})
+        SaveChangesContent(canSave = true, isSaving = false, saveFailed = true, onSave = {
+        }, onDiscard = {}, onCancel = {})
     }
 }

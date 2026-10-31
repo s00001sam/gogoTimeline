@@ -64,7 +64,7 @@ val OutlineVariantDark = Color(0xFF444444)
  */
 val TaskColorsLight = listOf(
     Color(0xFFD32F2F),
-    Color(0xFFBF360C),
+    Color(0xFFE65100),
     Color(0xFF8F6A00),
     Color(0xFF2E7D32),
     Color(0xFF1976D2),

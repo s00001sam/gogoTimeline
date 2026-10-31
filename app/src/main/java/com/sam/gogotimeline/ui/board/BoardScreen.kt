@@ -9,31 +9,38 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberBottomSheetScaffoldState
+import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -47,6 +54,7 @@ import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TaskSchedule
+import com.sam.gogotimeline.core.time.TaskTimeFormat
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
@@ -55,6 +63,8 @@ import com.sam.gogotimeline.data.model.TimelineSettings
 import com.sam.gogotimeline.ui.isTabletLayout
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
+import com.sam.gogotimeline.ui.sheet.TaskSheet
+import com.sam.gogotimeline.ui.sheet.TaskSheetState
 import com.sam.gogotimeline.ui.timeline.TimelineCallbacks
 import com.sam.gogotimeline.ui.timeline.TimelineScheduler
 import com.sam.gogotimeline.ui.timeline.TimelineState
@@ -108,6 +118,21 @@ fun BoardScreen(
 
     BackHandler(enabled = ready?.edit != null) { viewModel.onBack() }
 
+    val sheet = remember(ready?.edit, ready?.editStatus, calendar) {
+        val edit = ready?.edit ?: return@remember null
+        val (start, end) = TaskTimeFormat.sheetTimes(edit.draft.schedule, calendar)
+        TaskSheetState(
+            title = edit.draft.title,
+            start = start,
+            end = end,
+            colorIndex = edit.draft.colorIndex,
+            canSave = ready.canSave,
+            isSaving = ready.editStatus.isSaving,
+            // A failure from the dialog's Save shows in the dialog instead.
+            saveFailed = ready.editStatus.saveFailed && !ready.editStatus.confirmingClose,
+        )
+    }
+
     val callbacks = remember(viewModel, calendar) {
         TimelineCallbacks(
             onTaskTap = viewModel::onTaskTap,
@@ -136,10 +161,16 @@ fun BoardScreen(
         todayDayOfMonth = todayDayOfMonth,
         onGoToToday = { scope.launch { state.animateCenterTo(System.currentTimeMillis().toDouble()) } },
         onZoomChange = viewModel::onZoomChange,
+        sheet = sheet,
+        onTitleChange = viewModel::onTitleChange,
+        onColorChange = viewModel::onColorChange,
+        onCloseEditor = viewModel::onBack,
+        onConfirmEdit = viewModel::onConfirm,
     )
     val editStatus = ready?.editStatus
     if (editStatus?.confirmingClose == true) {
         SaveChangesDialog(
+            canSave = ready.canSave,
             isSaving = editStatus.isSaving,
             saveFailed = editStatus.saveFailed,
             onSave = viewModel::onSave,
@@ -168,16 +199,71 @@ fun BoardContent(
     todayDayOfMonth: Int,
     onGoToToday: () -> Unit,
     onZoomChange: (ZoomLevel) -> Unit = {},
+    sheet: TaskSheetState? = null,
+    onTitleChange: (String) -> Unit = {},
+    onColorChange: (Int) -> Unit = {},
+    onCloseEditor: () -> Unit = {},
+    onConfirmEdit: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val interactive = !isLoading && !isError
+    // The sheet stays hidden until a task is edited; it keeps the last content while it slides away.
+    val currentEditing by rememberUpdatedState(sheet != null)
+    val currentOnCloseEditor by rememberUpdatedState(onCloseEditor)
+    val sheetState = rememberStandardBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        // A swipe down acts like ×: the sheet snaps back and the close flow decides (it may ask Save / Discard).
+        // Expanding arrives with the full fields in step 5-3.
+        confirmValueChange = { value ->
+            when (value) {
+                SheetValue.Hidden -> {
+                    if (currentEditing) currentOnCloseEditor()
+                    !currentEditing
+                }
+
+                SheetValue.Expanded -> false
+
+                SheetValue.PartiallyExpanded -> true
+            }
+        },
+        skipHiddenState = false,
+    )
+    val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState)
+    var shownSheet by remember { mutableStateOf(sheet) }
+    if (sheet != null) shownSheet = sheet
+    val editing = sheet != null
+    var sheetHeightPx by remember { mutableIntStateOf(0) }
+    // Shows the sheet only once its content is measured: with a 0 peek height it would settle off screen.
+    LaunchedEffect(editing, sheetHeightPx) {
+        when {
+            !editing -> sheetState.hide()
+            sheetHeightPx > 0 -> sheetState.partialExpand()
+        }
+    }
     val paneWidth by animateDpAsState(
         targetValue = leftPaneWidth(isTabletLayout(), settings.leftPaneExpanded),
         animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
         label = "leftPaneWidth",
     )
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
+    BottomSheetScaffold(
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding(),
+        scaffoldState = scaffoldState,
+        sheetPeekHeight = with(LocalDensity.current) { sheetHeightPx.toDp() },
+        sheetDragHandle = null,
+        sheetContent = {
+            shownSheet?.let {
+                TaskSheet(
+                    modifier = Modifier.onSizeChanged { size -> sheetHeightPx = size.height },
+                    state = it,
+                    onTitleChange = onTitleChange,
+                    onColorChange = onColorChange,
+                    onClose = onCloseEditor,
+                    onConfirm = onConfirmEdit,
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text(boardName, style = MaterialTheme.typography.titleMedium) },
@@ -204,9 +290,11 @@ fun BoardContent(
             )
         },
     ) { innerPadding ->
+        // Only the top bar's padding: the bottom one reserves the sheet's peek height even while it is hidden,
+        // and the sheet is meant to float over the scheduler (spec 7.1).
         Box(
             modifier = Modifier
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
                 .fillMaxSize(),
         ) {
             TimelineScheduler(
@@ -322,6 +410,7 @@ private fun BoardPreview(
     selectedTaskId: Long? = null,
     isLoading: Boolean = false,
     isError: Boolean = false,
+    sheet: TaskSheetState? = null,
 ) {
     PreviewSurface {
         BoardContent(
@@ -345,6 +434,7 @@ private fun BoardPreview(
             onRetry = {},
             todayDayOfMonth = 30,
             onGoToToday = {},
+            sheet = sheet,
         )
     }
 }
@@ -365,4 +455,22 @@ private fun BoardLoadingPreview() {
 @Composable
 private fun BoardErrorPreview() {
     BoardPreview(tasks = emptyList(), isError = true)
+}
+
+@ThemePreviews
+@Composable
+private fun BoardEditingPreview() {
+    BoardPreview(
+        tasks = FakeTimelineData.tasks(previewNow, previewCalendar),
+        selectedTaskId = 1L,
+        sheet = TaskSheetState(
+            title = "Kickoff meeting",
+            start = "Fri, Oct 30  09:00",
+            end = "Fri, Oct 30  10:30",
+            colorIndex = 0,
+            canSave = true,
+            isSaving = false,
+            saveFailed = false,
+        ),
+    )
 }

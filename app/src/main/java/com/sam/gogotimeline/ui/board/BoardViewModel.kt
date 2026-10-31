@@ -3,6 +3,7 @@ package com.sam.gogotimeline.ui.board
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sam.gogotimeline.core.text.TaskTitle
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.data.repository.BoardRepository
@@ -84,13 +85,34 @@ class BoardViewModel @Inject constructor(
         setEdit(session.withSchedule(schedule))
     }
 
+    fun onTitleChange(title: String) {
+        val session = edit.value ?: return
+        if (!editStatus.value.isSaving) setEdit(session.withTitle(TaskTitle.clean(title)))
+    }
+
+    fun onColorChange(colorIndex: Int) {
+        val session = edit.value ?: return
+        if (!editStatus.value.isSaving) setEdit(session.withColor(colorIndex))
+    }
+
+    /** ✓: nothing to save just ends editing; otherwise saves. */
+    fun onConfirm() {
+        val session = edit.value ?: return
+        if (!TaskTitle.isValid(session.draft.title)) return
+        if (session.isDirty) {
+            onSave()
+        } else if (!editStatus.value.isSaving) {
+            endEditing()
+        }
+    }
+
     fun onSave() {
         val session = edit.value ?: return
-        if (editStatus.value.isSaving) return
+        if (editStatus.value.isSaving || !TaskTitle.isValid(session.draft.title)) return
         editStatus.update { it.copy(isSaving = true, saveFailed = false) }
         viewModelScope.launch {
             try {
-                taskRepository.saveTask(session.draft)
+                taskRepository.saveTask(session.draft.copy(title = session.draft.title.trim()))
                 endEditing()
             } catch (cancelled: CancellationException) {
                 throw cancelled

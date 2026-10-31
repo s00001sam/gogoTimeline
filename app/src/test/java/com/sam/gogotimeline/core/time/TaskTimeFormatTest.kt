@@ -1,5 +1,6 @@
 package com.sam.gogotimeline.core.time
 
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -84,5 +85,32 @@ class TaskTimeFormatTest {
 
     private companion object {
         const val NOW = "2026-10-30T12:00"
+    }
+
+    @Test
+    fun sheetShowsDateAndTimeForTimedTasks() {
+        val range = TimeRange(TAIPEI.at("2026-10-29T09:00"), TAIPEI.at("2026-10-29T10:30"))
+        assertEquals(
+            "Thu, Oct 29  09:00" to "Thu, Oct 29  10:30",
+            TaskTimeFormat.sheetTimes(TaskSchedule.Timed(range), TAIPEI),
+        )
+    }
+
+    @Test
+    fun sheetShowsOneAllDayDateOnBothLines() {
+        val day = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 10, 30), LocalDate.of(2026, 10, 31)))
+        assertEquals("Fri, Oct 30" to "Fri, Oct 30", TaskTimeFormat.sheetTimes(day, TAIPEI))
+    }
+
+    @Test
+    fun sheetAllDayEndStepsBackAcrossAMonth() {
+        val days = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 1)))
+        assertEquals("Fri, Oct 30" to "Sat, Oct 31", TaskTimeFormat.sheetTimes(days, TAIPEI))
+    }
+
+    @Test
+    fun sheetAllDayKeepsItsDateOnADaylightSavingDay() {
+        val springForward = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 3, 8), LocalDate.of(2026, 3, 9)))
+        assertEquals("Sun, Mar 8" to "Sun, Mar 8", TaskTimeFormat.sheetTimes(springForward, NEW_YORK))
     }
 }

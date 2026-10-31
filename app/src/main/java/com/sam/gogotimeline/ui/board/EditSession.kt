@@ -17,6 +17,10 @@ data class EditSession(
 
     fun withSchedule(schedule: TaskSchedule): EditSession = copy(draft = draft.copy(schedule = schedule))
 
+    fun withTitle(title: String): EditSession = copy(draft = draft.copy(title = title))
+
+    fun withColor(colorIndex: Int): EditSession = copy(draft = draft.copy(colorIndex = colorIndex))
+
     /**
      * Kept in [SavedStateHandle] because losing a draft loses the user's changes when the app is killed in the
      * background. [TaskSchedule] is not storable, so each edit becomes numbers plus its title.

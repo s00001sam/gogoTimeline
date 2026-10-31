@@ -118,6 +118,25 @@ object LayoutConst {
     const val SAVE_DIALOG_CLOSE_ICON_DP = 20f
     const val SAVE_DIALOG_ELEVATION_DP = 6f
 
+    // Task sheet
+    const val SHEET_PADDING_DP = 16f
+    const val SHEET_TOP_PADDING_DP = 12f
+    const val SHEET_SPACING_DP = 8f
+    const val SHEET_HANDLE_WIDTH_DP = 32f
+    const val SHEET_HANDLE_HEIGHT_DP = 4f
+    const val SHEET_HANDLE_ALPHA = 0.4f
+    const val SHEET_TIME_LABEL_MIN_WIDTH_DP = 56f
+    const val SHEET_BUTTON_SIZE_DP = 32f
+    const val SHEET_BUTTON_ICON_DP = 18f
+    const val NAME_FIELD_CORNER_DP = 12f
+    const val NAME_FIELD_PADDING_HORIZONTAL_DP = 12f
+    const val NAME_FIELD_PADDING_VERTICAL_DP = 8f
+    const val NAME_FIELD_MAX_LINES = 2
+    const val COLOR_DOT_DP = 28f
+    const val COLOR_RING_WIDTH_DP = 2f
+    const val COLOR_RING_GAP_DP = 2f
+    const val COLOR_TOUCH_DP = 40f
+
     // Time label near the finger while dragging.
     const val TIME_LABEL_GAP_DP = 8f
     const val TIME_LABEL_CORNER_DP = 4f

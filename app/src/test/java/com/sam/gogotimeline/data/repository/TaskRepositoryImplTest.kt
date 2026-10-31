@@ -190,6 +190,34 @@ class TaskRepositoryImplTest {
         coVerify(exactly = 0) { boards.clearAnchor(any()) }
     }
 
+    @Test
+    fun savedNameIsTrimmed() = runTest {
+        givenTask(order = 0)
+        val saved = slot<TaskEntity>()
+        coEvery { tasks.update(capture(saved)) } answers {}
+        repository.saveTask(TaskEdit(TASK, "  Kickoff  ", TaskSchedule.Timed(kickoff), colorIndex = 1))
+        assertEquals("Kickoff", saved.captured.title)
+    }
+
+    @Test
+    fun nameOfFortyOneCharactersIsRejected() = runTest {
+        givenTask(order = 0)
+        val result = runCatching { repository.saveTask(TaskEdit(TASK, "a".repeat(41), TaskSchedule.Timed(kickoff), 0)) }
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+        coVerify(exactly = 0) { tasks.update(any()) }
+    }
+
+    @Test
+    fun blankNameIsRejected() = runTest {
+        givenTask(order = 0)
+        val result = runCatching { repository.saveTask(TaskEdit(TASK, "   ", TaskSchedule.Timed(kickoff), 0)) }
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+        coVerify(exactly = 0) { tasks.update(any()) }
+        val created = runCatching { repository.createTask(BOARD, "", TaskSchedule.Timed(kickoff), 0) }
+        assertTrue(created.exceptionOrNull() is IllegalArgumentException)
+        coVerify(exactly = 0) { tasks.insert(any()) }
+    }
+
     private companion object {
         const val BOARD = 1L
         const val TASK = 10L

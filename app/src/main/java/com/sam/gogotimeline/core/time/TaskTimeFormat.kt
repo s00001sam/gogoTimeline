@@ -14,6 +14,7 @@ object TaskTimeFormat {
     private val dateFormat = DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)
     private val dateWithYearFormat = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)
     private val timeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
+    private val sheetDateFormat = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)
 
     /** e.g. `Oct 30 01:00 – Oct 30 02:00`; all-day `Oct 30` or `Oct 30 – Nov 1`. */
     fun barText(
@@ -37,6 +38,26 @@ object TaskTimeFormat {
             isAllDay && lastDay == firstDay -> date(firstDay)
             isAllDay -> "${date(firstDay)} – ${date(lastDay)}"
             else -> "${dateTime(start)} – ${dateTime(end)}"
+        }
+    }
+
+    /**
+     * Start and end lines in the task sheet: `Thu, Oct 29  09:00`, or dates only for all-day tasks, where the
+     * shown end is the stored (exclusive) end date minus one day (spec 7.2).
+     */
+    fun sheetTimes(
+        schedule: TaskSchedule,
+        calendar: CalendarContext,
+    ): Pair<String, String> = when (schedule) {
+        is TaskSchedule.AllDay -> sheetDateFormat.format(schedule.dates.start) to
+            sheetDateFormat.format(maxOf(schedule.dates.end.minusDays(1), schedule.dates.start))
+
+        is TaskSchedule.Timed -> {
+            fun line(time: Long): String {
+                val local = Instant.ofEpochMilli(time).atZone(calendar.zone)
+                return "${sheetDateFormat.format(local)}  ${timeFormat.format(local)}"
+            }
+            line(schedule.range.start) to line(schedule.range.end)
         }
     }
 

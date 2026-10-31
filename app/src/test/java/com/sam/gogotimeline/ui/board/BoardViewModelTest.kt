@@ -267,6 +267,91 @@ class BoardViewModelTest {
         assertEquals(B, viewModel.ready.selectedTaskId)
     }
 
+    @Test
+    fun titleChangesOnlyTheDraft() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onTitleChange("Renamed")
+        assertEquals("Renamed", viewModel.ready.edit!!.draft.title)
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+    }
+
+    @Test
+    fun confirmWithoutChangesJustEndsEditing() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onConfirm()
+        assertNull(viewModel.ready.edit)
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+    }
+
+    @Test
+    fun confirmSavesTheTrimmedName() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onTitleChange("  Renamed  ")
+        viewModel.onConfirm()
+        coVerify { taskRepository.saveTask(TaskEdit(B, "Renamed", b.schedule, colorIndex = 1)) }
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun blankNameCannotBeSaved() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onTitleChange("   ")
+        assertFalse(viewModel.ready.canSave)
+        viewModel.onConfirm()
+        viewModel.onSave()
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        assertEquals(B, viewModel.ready.selectedTaskId)
+    }
+
+    @Test
+    fun nameCannotChangeWhileSaving() {
+        val saving = CompletableDeferred<Unit>()
+        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onConfirm()
+        viewModel.onTitleChange("Too late")
+        assertEquals("Task $B", viewModel.ready.edit!!.draft.title)
+        assertFalse(viewModel.ready.canSave)
+        saving.complete(Unit)
+    }
+
+    @Test
+    fun colorChangesOnlyTheDraft() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onColorChange(6)
+        assertEquals(6, viewModel.ready.edit!!.draft.colorIndex)
+        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+    }
+
+    @Test
+    fun newColorCountsAsAChange() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onColorChange(6)
+        viewModel.onEmptyTap()
+        assertTrue(viewModel.ready.editStatus.confirmingClose)
+    }
+
+    @Test
+    fun pastedLineBreaksBecomeSpacesAndColorWaitsWhileSaving() {
+        val saving = CompletableDeferred<Unit>()
+        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onTitleChange("Plan\nrelease")
+        assertEquals("Plan release", viewModel.ready.edit!!.draft.title)
+        viewModel.onConfirm()
+        viewModel.onColorChange(6)
+        assertEquals(1, viewModel.ready.edit!!.draft.colorIndex)
+        saving.complete(Unit)
+    }
+
     private companion object {
         const val BOARD = 1L
         const val A = 10L
