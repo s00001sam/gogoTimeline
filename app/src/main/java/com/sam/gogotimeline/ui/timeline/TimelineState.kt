@@ -70,6 +70,9 @@ class TimelineState(
     private var rowCount by mutableIntStateOf(0)
     private var rowHeightPx by mutableFloatStateOf(0f)
 
+    // Row asked for by jumpTo before the rows were laid out; applied on the first layout that has rows.
+    private var pendingTopRow: Int? = null
+
     // Only one animation (fling or unit-button zoom) changes the view at a time; a touch cancels it.
     private val mutatorMutex = MutatorMutex()
 
@@ -155,16 +158,42 @@ class TimelineState(
         time: Double,
         x: Float,
     ) = mutatorMutex.mutate {
-        val target = TimeLimits.clamp(time)
         val axis = calendar.axis(unit)
-        val offset = (x - viewportWidthPx / 2) / (dpPerUnit.toDouble() * density)
         val from = axis.position(centerTime)
-        val to = axis.position(target) - offset
+        val to = axis.position(centerFor(time, x))
         animate(0f, 1f, animationSpec = tween(LayoutConst.ZOOM_ANIMATION_MILLIS)) { progress, _ ->
             centerTime = TimeLimits.clamp(axis.timeAt(from + (to - from) * progress))
         }
+        centerTime = centerFor(time, x)
+    }
+
+    /**
+     * Without animation: applies [zoom], scrolls so row [rowIndex] is at the top, and puts [time] at [x] px from
+     * the time axis' left edge. Needs the viewport measured; the row waits for the first layout that has rows.
+     */
+    fun jumpTo(
+        zoom: ZoomLevel,
+        rowIndex: Int,
+        time: Double,
+        x: Float,
+    ) {
+        unit = zoom.unit
+        dpPerUnit = zoom.dpPerUnit
+        if (rowCount > 0) scrollY = clampScrollY(rowIndex * rowHeightPx) else pendingTopRow = rowIndex
+        centerTime = centerFor(time, x)
+    }
+
+    /** The center time that puts [time] at [x] px from the axis' left edge, within the scroll limits. */
+    private fun centerFor(
+        time: Double,
+        x: Float,
+    ): Double {
+        val target = TimeLimits.clamp(time)
+        val offset = (x - viewportWidthPx / 2) / (dpPerUnit.toDouble() * density)
         // Centering lands exactly on the target, without a tiny rounding error from the round trip.
-        centerTime = TimeLimits.clamp(if (offset == 0.0) target else axis.timeAt(to))
+        if (offset == 0.0) return target
+        val axis = calendar.axis(unit)
+        return TimeLimits.clamp(axis.timeAt(axis.position(target) - offset))
     }
 
     /** Called on touch-down: cancels a running fling or zoom animation. */
@@ -186,6 +215,11 @@ class TimelineState(
         this.viewportHeightPx = viewportHeightPx
         this.rowCount = rowCount
         this.rowHeightPx = rowHeightPx
+        val pending = pendingTopRow
+        if (pending != null && rowCount > 0) {
+            scrollY = pending * rowHeightPx
+            pendingTopRow = null
+        }
         scrollY = clampScrollY(scrollY)
     }
 

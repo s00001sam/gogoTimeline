@@ -25,6 +25,7 @@ data class TimelineCallbacks(
     val onTaskTimeChange: (taskId: Long, start: Long, end: Long) -> Unit = { _, _, _ -> },
     val onTaskMove: (taskId: Long, toIndex: Int) -> Unit = { _, _ -> },
     val onZoomEnd: () -> Unit = {},
+    val onVerticalScrollSettled: (topRowIndex: Int) -> Unit = {},
 )
 
 /** Sizes in px that the gestures need, measured by the scheduler. */
@@ -241,6 +242,8 @@ internal class TimelineInteraction(
                 releasedMove = session.taskId to to
                 callbacks.onTaskMove(session.taskId, to)
             }
+            // Edge auto-scroll may have moved the view while reordering.
+            onVerticalScrollSettled()
             return
         }
         val range = previewRange() ?: session.original
@@ -256,6 +259,12 @@ internal class TimelineInteraction(
     }
 
     override fun onZoomEnd() = callbacks.onZoomEnd()
+
+    /** Reports the row whose part is at the top edge; nothing when there are no tasks. */
+    override fun onVerticalScrollSettled() {
+        if (tasks.isEmpty()) return
+        callbacks.onVerticalScrollSettled((state.scrollY / sizes.rowHeight).toInt().coerceIn(0, tasks.lastIndex))
+    }
 
     /**
      * While a drag runs, scrolls when the finger is near an edge of the body: horizontally for move/resize,

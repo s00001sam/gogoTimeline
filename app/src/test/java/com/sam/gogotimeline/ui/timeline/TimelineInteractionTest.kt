@@ -32,6 +32,9 @@ class TimelineInteractionTest {
     private val offScreenRight = task(2, "2026-10-31T09:00", "2026-10-31T10:00")
     private val partlyLeft = task(3, "2026-10-30T08:00", "2026-10-30T09:00")
 
+    // Ten rows are taller than the body, so it can scroll.
+    private val tenTasks = (1L..10L).map { task(it, "2026-10-30T11:00", "2026-10-30T12:00") }
+
     /** Records what the scheduler reports to its owner. */
     private class Recorder {
         val events = mutableListOf<String>()
@@ -40,6 +43,7 @@ class TimelineInteractionTest {
             onEmptyTap = { events += "empty" },
             onTaskTimeChange = { id, start, end -> events += "time $id ${TAIPEI.local(start)} ${TAIPEI.local(end)}" },
             onTaskMove = { id, to -> events += "move $id $to" },
+            onVerticalScrollSettled = { events += "top $it" },
         )
     }
 
@@ -117,7 +121,7 @@ class TimelineInteractionTest {
         interaction.onDragStart(HitTarget.RowBlank(2), DragKind.REORDER, down)
         interaction.onDrag(down + Offset(0f, ROW))
         interaction.onDragEnd()
-        assertEquals(listOf("move 2 2"), recorder.events)
+        assertEquals(listOf("move 2 2"), recorder.events.filter { !it.startsWith("top") })
     }
 
     @Test
@@ -160,7 +164,7 @@ class TimelineInteractionTest {
         interaction.onDragStart(HitTarget.RowBlank(1), DragKind.REORDER, down)
         interaction.onDrag(down + Offset(0f, 10f))
         interaction.onDragEnd()
-        assertEquals(listOf("move 1 1"), recorder.events)
+        assertEquals(listOf("move 1 1"), recorder.events.filter { it.startsWith("move") })
     }
 
     @Test
@@ -244,6 +248,39 @@ class TimelineInteractionTest {
         advanceUntilIdle()
         assertTrue(recorder.events.isEmpty())
         assertEquals(MARGIN, state.timeToX(offScreenRight.start.toDouble()), 0.01f)
+    }
+
+    @Test
+    fun settledScrollReportsThePartlyVisibleTopRow() = runTest {
+        val (interaction, state, recorder) = setUp(tasks = tenTasks)
+        state.scrollBy(0f, -300f)
+        interaction.onVerticalScrollSettled()
+        assertEquals(listOf("top 2"), recorder.events)
+    }
+
+    @Test
+    fun rowTopExactlyAtTheEdgeIsThatRow() = runTest {
+        val (interaction, state, recorder) = setUp(tasks = tenTasks)
+        state.scrollBy(0f, -2 * ROW)
+        interaction.onVerticalScrollSettled()
+        assertEquals(listOf("top 2"), recorder.events)
+    }
+
+    @Test
+    fun noTasksReportNoTopRow() = runTest {
+        val (interaction, _, recorder) = setUp(tasks = emptyList())
+        interaction.onVerticalScrollSettled()
+        assertTrue(recorder.events.isEmpty())
+    }
+
+    @Test
+    fun reorderDropReportsTheMoveThenTheTopRow() = runTest {
+        val (interaction, _, recorder) = setUp(selectedTaskId = 1)
+        val down = Offset(axis(800f), rowY(0))
+        interaction.onDragStart(HitTarget.RowBlank(1), DragKind.REORDER, down)
+        interaction.onDrag(down + Offset(0f, ROW))
+        interaction.onDragEnd()
+        assertEquals(listOf("move 1 1", "top 0"), recorder.events)
     }
 
     @Test

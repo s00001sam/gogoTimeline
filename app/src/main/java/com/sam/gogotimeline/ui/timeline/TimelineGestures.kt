@@ -47,6 +47,8 @@ internal interface TimelineGestureHandler {
     fun onDragCancel()
 
     fun onZoomEnd()
+
+    fun onVerticalScrollSettled()
 }
 
 /**
@@ -168,7 +170,11 @@ internal fun Modifier.timelineGestures(
                         DragDirection.HORIZONTAL -> Velocity(velocity.x, 0f)
                         DragDirection.VERTICAL -> Velocity(0f, velocity.y)
                     }
-                    launch { state.fling(flingVelocity) }
+                    launch {
+                        state.fling(flingVelocity)
+                        // Not reached when a new touch interrupts the fling; that gesture reports instead.
+                        if (locked == DragDirection.VERTICAL) callbacks.onVerticalScrollSettled()
+                    }
                 }
             }
         }

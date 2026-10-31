@@ -4,11 +4,15 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -17,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,23 +29,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
-import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
-import com.sam.gogotimeline.core.time.TaskTimes
+import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.core.time.ZoomRules
+import com.sam.gogotimeline.data.model.TimelineSettings
 import com.sam.gogotimeline.ui.isTabletLayout
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
@@ -56,53 +66,74 @@ import com.sam.gogotimeline.ui.timeline.rememberTimelineState
 import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.ZoneId
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/**
- * The board screen. Until Room is wired up in step 4, it keeps fake tasks in memory, applies drags to them
- * directly, and opens on "now" in Day mode.
- */
+/** The board screen: reads the board from [BoardViewModel] and keeps the viewport in the scheduler's own state. */
 @Composable
-fun BoardScreen(modifier: Modifier = Modifier) {
+fun BoardScreen(
+    modifier: Modifier = Modifier,
+    viewModel: BoardViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val ready = uiState as? BoardUiState.Ready
+    val settings = ready?.settings ?: TimelineSettings.DEFAULT
     val calendar = rememberCalendarContext()
     val state = rememberTimelineState(
         initialCenterTime = System.currentTimeMillis().toDouble(),
-        initialUnit = TimeUnit.DAY,
-        initialDpPerUnit = TimeUnit.DAY.standardWidthDp,
+        initialUnit = settings.zoom.unit,
+        initialDpPerUnit = settings.zoom.dpPerUnit,
         calendar = calendar,
     )
-    var tasks by remember(calendar) { mutableStateOf(FakeTimelineData.tasks(System.currentTimeMillis(), calendar)) }
-    var selectedTaskId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var leftPaneExpanded by rememberSaveable { mutableStateOf(false) }
+    val tasks = remember(ready?.tasks, calendar) { ready?.tasks.orEmpty().map { it.toTimelineTask(calendar) } }
     val now = rememberNow()
     val todayDayOfMonth by remember(calendar) { derivedStateOf { calendar.localDate(now.value).dayOfMonth } }
     val scope = rememberCoroutineScope()
+    val marginPx = with(LocalDensity.current) { LayoutConst.SCROLL_TO_TASK_MARGIN_DP.dp.toPx() }
+
+    // Opens on the anchor once; after rotation the saved viewport takes over.
+    var opened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(ready != null) {
+        if (ready == null || opened) return@LaunchedEffect
+        snapshotFlow { state.viewportWidthPx }.first { it > 0f }
+        val position = openingPosition(tasks, ready.board.anchorTaskId, System.currentTimeMillis())
+        val x = if (position.centered) state.viewportWidthPx / 2 else marginPx
+        state.jumpTo(ready.settings.zoom, position.rowIndex, position.time.toDouble(), x)
+        opened = true
+    }
+
+    val callbacks = remember(viewModel, calendar) {
+        TimelineCallbacks(
+            onTaskTap = viewModel::onTaskTap,
+            onEmptyTap = viewModel::onEmptyTap,
+            // A drag that lands on full local days becomes all-day; otherwise it stops being all-day (spec 7).
+            onTaskTimeChange = { id, start, end ->
+                viewModel.onTaskScheduleChange(id, TaskSchedule.from(TimeRange(start, end), calendar))
+            },
+            onTaskMove = viewModel::onTaskMove,
+            onVerticalScrollSettled = viewModel::onVerticalScrollSettled,
+        )
+    }
     BoardContent(
         modifier = modifier,
-        boardName = stringResource(R.string.sample_board_name),
+        boardName = ready?.board?.name.orEmpty(),
         state = state,
         calendar = calendar,
         tasks = tasks,
-        selectedTaskId = selectedTaskId,
-        callbacks = TimelineCallbacks(
-            onTaskTap = { selectedTaskId = it },
-            onEmptyTap = { selectedTaskId = null },
-            onTaskTimeChange = { id, start, end ->
-                // A drag that lands on full local days becomes all-day; otherwise it stops being all-day (spec 7).
-                val isAllDay = TaskTimes.isAllDay(TimeRange(start, end), calendar)
-                tasks = tasks.map { if (it.id == id) it.copy(start = start, end = end, isAllDay = isAllDay) else it }
-            },
-            onTaskMove = { id, toIndex ->
-                tasks = GestureMath.moveItem(tasks, tasks.indexOfFirst { it.id == id }, toIndex)
-            },
-        ),
-        leftPaneExpanded = leftPaneExpanded,
-        onToggleLeftPane = { leftPaneExpanded = !leftPaneExpanded },
+        settings = settings,
+        selectedTaskId = ready?.selectedTaskId,
+        isLoading = uiState is BoardUiState.Loading,
+        isError = uiState is BoardUiState.Error,
+        callbacks = callbacks,
+        onToggleLeftPane = viewModel::onToggleLeftPane,
+        onRetry = viewModel::retry,
         todayDayOfMonth = todayDayOfMonth,
         onGoToToday = { scope.launch { state.animateCenterTo(System.currentTimeMillis().toDouble()) } },
+        onZoomChange = viewModel::onZoomChange,
     )
 }
 
+/** While loading or after an error, the scheduler is a skeleton under an overlay that blocks touches. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BoardContent(
@@ -111,17 +142,21 @@ fun BoardContent(
     state: TimelineState,
     calendar: CalendarContext,
     tasks: List<TimelineTask>,
+    settings: TimelineSettings,
     selectedTaskId: Long?,
+    isLoading: Boolean,
+    isError: Boolean,
     callbacks: TimelineCallbacks,
-    leftPaneExpanded: Boolean,
     onToggleLeftPane: () -> Unit,
+    onRetry: () -> Unit,
     todayDayOfMonth: Int,
     onGoToToday: () -> Unit,
     onZoomChange: (ZoomLevel) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    val interactive = !isLoading && !isError
     val paneWidth by animateDpAsState(
-        targetValue = leftPaneWidth(isTabletLayout(), leftPaneExpanded),
+        targetValue = leftPaneWidth(isTabletLayout(), settings.leftPaneExpanded),
         animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
         label = "leftPaneWidth",
     )
@@ -131,40 +166,90 @@ fun BoardContent(
             TopAppBar(
                 title = { Text(boardName, style = MaterialTheme.typography.titleMedium) },
                 actions = {
-                    TodayButton(dayOfMonth = todayDayOfMonth, onClick = onGoToToday)
-                    TextButton(
-                        onClick = {
-                            scope.launch {
-                                val target = ZoomRules.unitButtonTarget(
-                                    state.unit,
-                                    state.dpPerUnit,
-                                    state.widthMultiplier,
-                                )
-                                state.animateZoomTo(target)
-                                onZoomChange(target)
-                            }
-                        },
-                    ) {
-                        Text(stringResource(state.unit.labelRes()))
+                    if (interactive) {
+                        TodayButton(dayOfMonth = todayDayOfMonth, onClick = onGoToToday)
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    val target = ZoomRules.unitButtonTarget(
+                                        state.unit,
+                                        state.dpPerUnit,
+                                        state.widthMultiplier,
+                                    )
+                                    state.animateZoomTo(target)
+                                    onZoomChange(target)
+                                }
+                            },
+                        ) {
+                            Text(stringResource(state.unit.labelRes()))
+                        }
                     }
                 },
             )
         },
     ) { innerPadding ->
-        TimelineScheduler(
+        Box(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize(),
-            state = state,
-            calendar = calendar,
-            tasks = tasks,
-            leftPaneWidth = paneWidth,
-            leftPaneExpanded = leftPaneExpanded,
-            onToggleLeftPane = onToggleLeftPane,
-            selectedTaskId = selectedTaskId,
-            callbacks = callbacks,
-            onZoomChange = onZoomChange,
-        )
+        ) {
+            TimelineScheduler(
+                modifier = Modifier.fillMaxSize(),
+                state = state,
+                calendar = calendar,
+                tasks = tasks,
+                leftPaneWidth = paneWidth,
+                leftPaneExpanded = settings.leftPaneExpanded,
+                onToggleLeftPane = onToggleLeftPane,
+                rowHeight = settings.rowHeightDp.dp,
+                selectedTaskId = selectedTaskId,
+                snapIntervals = settings.snapIntervals,
+                widthMultiplier = settings.widthMultiplier,
+                callbacks = callbacks,
+                onZoomChange = onZoomChange,
+                showEmptyState = interactive,
+            )
+            if (!interactive) {
+                StatusOverlay(isError = isError, onRetry = onRetry)
+            }
+        }
+    }
+}
+
+/** Blocks touches on the skeleton and shows a spinner, or the error with Retry. Text follows the system font size. */
+@Composable
+private fun StatusOverlay(
+    isError: Boolean,
+    onRetry: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) awaitPointerEvent().changes.forEach { it.consume() }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (isError) {
+            Column(
+                modifier = Modifier.padding(LayoutConst.BOARD_STATUS_SPACING_DP.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(LayoutConst.BOARD_STATUS_SPACING_DP.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.load_error),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                )
+                Button(onClick = onRetry) {
+                    Text(stringResource(R.string.retry))
+                }
+            }
+        } else {
+            CircularProgressIndicator()
+        }
     }
 }
 
@@ -212,30 +297,56 @@ private fun TimeUnit.labelRes(): Int = when (this) {
     TimeUnit.MONTH -> R.string.unit_month
 }
 
-@ThemePreviews
+private val previewCalendar = CalendarContext(ZoneId.of("Asia/Taipei"), DayOfWeek.SUNDAY)
+private val previewNow = LocalDateTime.of(2026, 10, 30, 12, 0).atZone(previewCalendar.zone).toInstant().toEpochMilli()
+
 @Composable
-private fun BoardContentPreview() {
-    val calendar = CalendarContext(ZoneId.of("Asia/Taipei"), DayOfWeek.SUNDAY)
-    val now = LocalDateTime.of(2026, 10, 30, 12, 0).atZone(calendar.zone).toInstant().toEpochMilli()
+private fun BoardPreview(
+    tasks: List<TimelineTask>,
+    selectedTaskId: Long? = null,
+    isLoading: Boolean = false,
+    isError: Boolean = false,
+) {
     PreviewSurface {
         BoardContent(
-            boardName = "Sample board",
+            boardName = if (isLoading || isError) "" else "Sample Project",
             state = remember {
                 TimelineState(
-                    initialCenterTime = now.toDouble(),
+                    initialCenterTime = previewNow.toDouble(),
                     initialUnit = TimeUnit.DAY,
                     initialDpPerUnit = TimeUnit.DAY.standardWidthDp,
-                    calendar = calendar,
+                    calendar = previewCalendar,
                 )
             },
-            calendar = calendar,
-            tasks = FakeTimelineData.tasks(now, calendar),
-            selectedTaskId = 1L,
+            calendar = previewCalendar,
+            tasks = tasks,
+            settings = TimelineSettings.DEFAULT,
+            selectedTaskId = selectedTaskId,
+            isLoading = isLoading,
+            isError = isError,
             callbacks = TimelineCallbacks(),
-            leftPaneExpanded = false,
             onToggleLeftPane = {},
+            onRetry = {},
             todayDayOfMonth = 30,
             onGoToToday = {},
         )
     }
+}
+
+@ThemePreviews
+@Composable
+private fun BoardReadyPreview() {
+    BoardPreview(tasks = FakeTimelineData.tasks(previewNow, previewCalendar), selectedTaskId = 1L)
+}
+
+@ThemePreviews
+@Composable
+private fun BoardLoadingPreview() {
+    BoardPreview(tasks = emptyList(), isLoading = true)
+}
+
+@ThemePreviews
+@Composable
+private fun BoardErrorPreview() {
+    BoardPreview(tasks = emptyList(), isError = true)
 }

@@ -317,6 +317,32 @@ class TimelineStateTest {
         assertTrue(clock.frames <= 21)
     }
 
+    @Test
+    fun jumpPutsTheRowAtTheTopAndTheTimeAtX() {
+        val state = state()
+        val time = TAIPEI.at("2026-10-30T14:00").toDouble()
+        state.jumpTo(ZoomLevel(TimeUnit.DAY, 64f), rowIndex = 3, time = time, x = 48f)
+        assertEquals(ZoomLevel(TimeUnit.DAY, 64f), state.zoomLevel)
+        assertEquals(3 * ROW_PX, state.scrollY, EPSILON)
+        assertEquals(48f, state.timeToX(time), EPSILON)
+    }
+
+    @Test
+    fun jumpToTheLastRowStopsAtTheBottom() {
+        val state = state()
+        state.jumpTo(ZoomLevel(TimeUnit.HOUR, 64f), rowIndex = 9, time = noon, x = 48f)
+        assertEquals(MAX_SCROLL_PX, state.scrollY, EPSILON)
+    }
+
+    @Test
+    fun jumpBeforeTheRowsAreLaidOutWaitsForThem() {
+        val state = state(rowCount = 0)
+        state.jumpTo(ZoomLevel(TimeUnit.HOUR, 64f), rowIndex = 3, time = noon, x = 48f)
+        assertEquals(0f, state.scrollY, EPSILON)
+        state.updateLayout(DENSITY, AXIS_LEFT_PX, WIDTH_PX, HEIGHT_PX, 10, ROW_PX)
+        assertEquals(3 * ROW_PX, state.scrollY, EPSILON)
+    }
+
     private companion object {
         const val DENSITY = 2f
         const val AXIS_LEFT_PX = 380f

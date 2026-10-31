@@ -110,6 +110,7 @@ object LayoutConst {
 
     // Tapping an off-screen task scrolls its start to this distance from the time axis' left edge.
     const val SCROLL_TO_TASK_MARGIN_DP = 24f
+    const val BOARD_STATUS_SPACING_DP = 16f
 
     // Time label near the finger while dragging.
     const val TIME_LABEL_GAP_DP = 8f

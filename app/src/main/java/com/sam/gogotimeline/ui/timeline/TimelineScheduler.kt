@@ -84,6 +84,7 @@ fun TimelineScheduler(
     callbacks: TimelineCallbacks = TimelineCallbacks(),
     onZoomChange: (ZoomLevel) -> Unit = {},
     onNewTask: () -> Unit = {},
+    showEmptyState: Boolean = true,
 ) {
     LaunchedEffect(calendar) { state.calendar = calendar }
     LaunchedEffect(widthMultiplier) { state.widthMultiplier = widthMultiplier }
@@ -283,7 +284,7 @@ fun TimelineScheduler(
                     drawText(layout, topLeft = Offset(left + paddingX, top + paddingY))
                 }
             },
-            { if (tasks.isEmpty()) EmptyState(onNewTask = onNewTask) },
+            { if (showEmptyState && tasks.isEmpty()) EmptyState(onNewTask = onNewTask) },
         ),
     ) { measurables, constraints ->
         val width = constraints.maxWidth

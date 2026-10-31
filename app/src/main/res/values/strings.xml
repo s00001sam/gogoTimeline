@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">gogoTimeline</string>
-    <string name="sample_board_name">Sample board</string>
     <string name="unit_hour">Hour</string>
     <string name="unit_day">Day</string>
     <string name="unit_week">Week</string>
@@ -10,4 +9,6 @@
     <string name="collapse_task_list">Collapse task list</string>
     <string name="all_day">All day</string>
     <string name="new_task">New task</string>
+    <string name="load_error">Couldn’t load your data.</string>
+    <string name="retry">Retry</string>
 </resources>
