@@ -23,7 +23,7 @@ class RowHeightTest {
     fun valuesOutsideTheRangeAreClamped() {
         assertEquals(0.8f, RowHeight.roundMultiplier(0f), EPSILON)
         assertEquals(2f, RowHeight.roundMultiplier(7f), EPSILON)
-        // A row saved at 48dp under the old range shows as 0.75x and is clamped up once moved.
+        // A stored 48dp height is 0.75x, below the range, and rounds up to its lowest step.
         assertEquals(0.8f, RowHeight.roundMultiplier(RowHeight.toMultiplier(48f)), EPSILON)
     }
 

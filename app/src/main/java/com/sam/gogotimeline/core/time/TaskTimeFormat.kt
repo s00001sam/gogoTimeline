@@ -16,6 +16,7 @@ object TaskTimeFormat {
     private val dateWithYearFormat = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)
     private val timeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
     private val sheetDateFormat = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)
+    private val sheetDateWithYearFormat = DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)
 
     /** e.g. `Oct 30 01:00 – Oct 30 02:00`; all-day `Oct 30` or `Oct 30 – Nov 1`. */
     fun barText(
@@ -40,6 +41,28 @@ object TaskTimeFormat {
             isAllDay -> "${date(firstDay)} – ${date(lastDay)}"
             else -> "${dateTime(start)} – ${dateTime(end)}"
         }
+    }
+
+    /**
+     * One line for the read-only task sheet: a timed task within one day reads `Thu, Oct 30  14:00 – 15:30` (with the
+     * year when not this year); anything else reads like [barText].
+     */
+    fun viewText(
+        schedule: TaskSchedule,
+        now: Long,
+        calendar: CalendarContext,
+    ): String {
+        val range = schedule.toTimeRange(calendar)
+        if (schedule is TaskSchedule.Timed) {
+            val start = Instant.ofEpochMilli(range.start).atZone(calendar.zone)
+            val end = Instant.ofEpochMilli(range.end).atZone(calendar.zone)
+            if (start.toLocalDate() == end.toLocalDate()) {
+                val thisYear = start.year == calendar.localDate(now).year
+                val format = if (thisYear) sheetDateFormat else sheetDateWithYearFormat
+                return "${format.format(start)}  ${timeFormat.format(start)} – ${timeFormat.format(end)}"
+            }
+        }
+        return barText(range, schedule is TaskSchedule.AllDay, now, calendar)
     }
 
     /** The date button in the task sheet, e.g. `Thu, Oct 29`. */

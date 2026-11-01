@@ -100,6 +100,47 @@ class TaskTimeFormatTest {
         assertEquals("Sun, Mar 8", TaskTimeFormat.sheetDate(LocalDate.of(2026, 3, 8)))
     }
 
+    private fun view(
+        schedule: TaskSchedule,
+        calendar: CalendarContext = TAIPEI,
+    ): String = TaskTimeFormat.viewText(schedule, calendar.at(NOW), calendar)
+
+    private fun timed(
+        start: String,
+        end: String,
+        calendar: CalendarContext = TAIPEI,
+    ) = TaskSchedule.Timed(TimeRange(calendar.at(start), calendar.at(end)))
+
+    @Test
+    fun viewTextShowsTheWeekdayOnceForASameDayTask() {
+        assertEquals("Thu, Oct 29  14:00 – 15:30", view(timed("2026-10-29T14:00", "2026-10-29T15:30")))
+    }
+
+    @Test
+    fun viewTextAcrossDaysAndAllDayReadLikeTheBar() {
+        assertEquals("Oct 29 22:00 – Oct 30 02:00", view(timed("2026-10-29T22:00", "2026-10-30T02:00")))
+        val days = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 3)))
+        assertEquals("Oct 30 – Nov 2", view(days))
+        val oneDay = TaskSchedule.AllDay(DateRange(LocalDate.of(2026, 10, 30), LocalDate.of(2026, 10, 31)))
+        assertEquals("Oct 30", view(oneDay))
+    }
+
+    @Test
+    fun viewTextEndingAtMidnightIsAcrossDays() {
+        // Ending exactly at the next local midnight is another date, so both dates show.
+        assertEquals("Oct 29 23:00 – Oct 30 00:00", view(timed("2026-10-29T23:00", "2026-10-30T00:00")))
+    }
+
+    @Test
+    fun viewTextAddsTheYearOutsideThisYearAndHandlesDst() {
+        assertEquals("Wed, Dec 31, 2025  09:00 – 10:00", view(timed("2025-12-31T09:00", "2025-12-31T10:00")))
+        // New York's 25-hour day: 00:30 to 03:00 is still one date.
+        assertEquals(
+            "Sun, Nov 1  00:30 – 03:00",
+            view(timed("2026-11-01T00:30", "2026-11-01T03:00", NEW_YORK), NEW_YORK),
+        )
+    }
+
     @Test
     fun sheetDatesAtThePickerLimitsKeepTheirWeekday() {
         assertEquals("Mon, Jan 1", TaskTimeFormat.sheetDate(LocalDate.of(1900, 1, 1)))

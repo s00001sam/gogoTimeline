@@ -15,7 +15,7 @@ data class TimelineSettings(
     val leftPaneExpanded: Boolean,
     /** Tablets only: whether the docked board drawer is shown (spec 9). */
     val drawerExpanded: Boolean,
-    /** Lock was accepted once in the first-lock confirmation, so locking no longer asks (spec 9). */
+    /** Lock was accepted once in the first-lock confirmation, so locking does not ask again (spec 9). */
     val lockConfirmed: Boolean,
 ) {
     fun snapFor(unit: TimeUnit): SnapInterval = snapIntervals[unit] ?: SnapInterval.default(unit)

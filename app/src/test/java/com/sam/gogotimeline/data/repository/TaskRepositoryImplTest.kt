@@ -244,6 +244,52 @@ class TaskRepositoryImplTest {
         coVerify(exactly = 0) { tasks.update(any()) }
     }
 
+    @Test
+    fun newTaskAtARowMovesTheRowsBelowDownFirst() = runTest {
+        coEvery { tasks.maxSortOrder(BOARD) } returns 14
+        val inserted = slot<TaskEntity>()
+        coEvery { tasks.insert(capture(inserted)) } returns 16
+        repository.createTask(BOARD, "Demo", TaskSchedule.Timed(kickoff), colorIndex = 3, notes = "", atIndex = 2)
+        coVerifyOrder {
+            tasks.shiftSortOrders(BOARD, 2, 14, 1)
+            tasks.insert(any())
+        }
+        assertEquals(2, inserted.captured.sortOrder)
+        assertEquals(1, transaction.runs)
+    }
+
+    @Test
+    fun newTaskAtTheEndOrBeyondShiftsNothing() = runTest {
+        coEvery { tasks.maxSortOrder(BOARD) } returns 14
+        val inserted = slot<TaskEntity>()
+        coEvery { tasks.insert(capture(inserted)) } returns 16
+        repository.createTask(BOARD, "Demo", TaskSchedule.Timed(kickoff), colorIndex = 3, notes = "", atIndex = 99)
+        assertEquals(15, inserted.captured.sortOrder)
+        coVerify(exactly = 0) { tasks.shiftSortOrders(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun savingWithANewRowUpdatesAndMovesInOneTransaction() = runTest {
+        givenTask(order = 0)
+        coEvery { tasks.setSortOrder(any(), any()) } answers { assertTrue(transaction.active) }
+        repository.saveTask(edit(kickoff).copy(title = "Renamed"), toIndex = 3)
+        coVerifyOrder {
+            tasks.update(any())
+            tasks.shiftSortOrders(BOARD, 1, 3, -1)
+            tasks.setSortOrder(TASK, 3)
+        }
+        assertEquals(1, transaction.runs)
+    }
+
+    @Test
+    fun failedUpdateKeepsTheOldRowToo() = runTest {
+        givenTask(order = 0)
+        coEvery { tasks.update(any()) } throws IllegalStateException("disk")
+        val result = runCatching { repository.saveTask(edit(kickoff).copy(title = "Renamed"), toIndex = 3) }
+        assertTrue(result.isFailure)
+        coVerify(exactly = 0) { tasks.setSortOrder(any(), any()) }
+    }
+
     private companion object {
         const val BOARD = 1L
         const val TASK = 10L

@@ -31,10 +31,15 @@ class TaskRepositoryImpl @Inject constructor(
         schedule: TaskSchedule,
         colorIndex: Int,
         notes: String,
+        atIndex: Int?,
     ): Long = transaction.run {
         require(TaskTitle.isValid(title)) { "Invalid task name" }
         require(TaskNotes.isValid(notes)) { "Notes too long" }
         val now = clock.millis()
+        // Rows from the new one's place down move one row first, so no two rows ever share a sortOrder.
+        val count = (taskDataSource.maxSortOrder(boardId) ?: -1) + 1
+        val sortOrder = atIndex?.coerceIn(0, count) ?: count
+        if (sortOrder < count) taskDataSource.shiftSortOrders(boardId, sortOrder, count - 1, 1)
         val task = TaskEntity(
             boardId = boardId,
             title = title.trim(),
@@ -43,14 +48,17 @@ class TaskRepositoryImpl @Inject constructor(
             endTime = 0,
             colorIndex = colorIndex,
             isAllDay = false,
-            sortOrder = (taskDataSource.maxSortOrder(boardId) ?: -1) + 1,
+            sortOrder = sortOrder,
             createdAt = now,
             updatedAt = now,
         ).withSchedule(schedule)
         taskDataSource.insert(task)
     }
 
-    override suspend fun saveTask(edit: TaskEdit) {
+    override suspend fun saveTask(
+        edit: TaskEdit,
+        toIndex: Int?,
+    ) {
         transaction.run {
             // The sheet checks the name too; checking here keeps bad names out whoever saves.
             require(TaskTitle.isValid(edit.title)) { "Invalid task name" }
@@ -62,6 +70,7 @@ class TaskRepositoryImpl @Inject constructor(
                 colorIndex = edit.colorIndex,
             ).withSchedule(edit.schedule)
             if (edited != current) taskDataSource.update(edited.copy(updatedAt = clock.millis()))
+            if (toIndex != null) moveInTransaction(current.boardId, edit.taskId, current.sortOrder, toIndex)
         }
     }
 
@@ -72,14 +81,24 @@ class TaskRepositoryImpl @Inject constructor(
     ) {
         transaction.run {
             val from = taskDataSource.getTask(taskId)?.sortOrder ?: return@run
-            val to = toIndex.coerceIn(0, taskDataSource.maxSortOrder(boardId) ?: 0)
-            when {
-                to > from -> taskDataSource.shiftSortOrders(boardId, from + 1, to, -1)
-                to < from -> taskDataSource.shiftSortOrders(boardId, to, from - 1, 1)
-                else -> return@run
-            }
-            taskDataSource.setSortOrder(taskId, to)
+            moveInTransaction(boardId, taskId, from, toIndex)
         }
+    }
+
+    // Shifts the rows between the old and new place by one and puts the task there; callers hold the transaction.
+    private suspend fun moveInTransaction(
+        boardId: Long,
+        taskId: Long,
+        from: Int,
+        toIndex: Int,
+    ) {
+        val to = toIndex.coerceIn(0, taskDataSource.maxSortOrder(boardId) ?: 0)
+        when {
+            to > from -> taskDataSource.shiftSortOrders(boardId, from + 1, to, -1)
+            to < from -> taskDataSource.shiftSortOrders(boardId, to, from - 1, 1)
+            else -> return
+        }
+        taskDataSource.setSortOrder(taskId, to)
     }
 
     override suspend fun deleteTask(

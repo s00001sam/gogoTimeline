@@ -130,7 +130,7 @@ class GestureMathTest {
 
     @Test
     fun fastDragPastTheSideKeepsFollowingTheEdge() {
-        // The reported bug: a quick drag carried the edge past the card, and scrolling stopped.
+        // A quick drag can carry the edge past the card within one frame; scrolling keeps following the edge.
         assertEquals(650f, GestureMath.autoScrollPosition(edgeX = 650f, fingerX = 300f, edgeStartedOnScreen = true))
         assertEquals(MAX_SPEED, speed(650f), EPSILON)
     }

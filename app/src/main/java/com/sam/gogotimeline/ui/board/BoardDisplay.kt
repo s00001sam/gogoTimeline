@@ -1,5 +1,6 @@
 package com.sam.gogotimeline.ui.board
 
+import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.data.model.Task
@@ -38,10 +39,21 @@ internal fun openingPosition(
 }
 
 /**
- * The tasks to draw: the database tasks with the draft's title, times, color and notes laid over its task. A new
- * task's draft becomes the last row.
+ * The tasks to draw: the database tasks with the draft's title, times, color and notes laid over its task, which is
+ * moved to [draftRow] (the draft's place after reordering). A new task's draft is added, at the end unless moved.
  */
 internal fun tasksWithDraft(
+    tasks: List<Task>,
+    draft: TaskEdit?,
+    draftRow: Int? = null,
+): List<Task> {
+    val shown = tasksWithDraftContent(tasks, draft)
+    val from = shown.indexOfFirst { it.id == draft?.taskId }
+    if (draftRow == null || from < 0) return shown
+    return GestureMath.moveItem(shown, from, draftRow.coerceIn(0, shown.lastIndex))
+}
+
+private fun tasksWithDraftContent(
     tasks: List<Task>,
     draft: TaskEdit?,
 ): List<Task> {

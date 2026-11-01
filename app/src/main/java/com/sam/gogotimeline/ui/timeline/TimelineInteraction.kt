@@ -172,16 +172,19 @@ internal class TimelineInteraction(
             handleOutside = sizes.handleOutside,
             handleInside = sizes.handleInside,
         )
-        return HitTest.hitTest(position.x, position.y, layout, rows, selectedTaskId)
+        // Only an editable selection has handles to hit.
+        return HitTest.hitTest(position.x, position.y, layout, rows, selectedTaskId.takeIf { editable })
     }
 
-    // Any task row can be long-pressed to reorder; no selection needed.
-    override fun canLongPress(target: HitTarget): Boolean = rowTaskId(target) != null
+    // Any task row can be long-pressed to reorder; while editing, only the edited row, whose new place joins the draft.
+    // On a locked board every row can, so the press can say why nothing lifts.
+    override fun canLongPress(target: HitTarget): Boolean =
+        rowTaskId(target)?.let { !editable || selectedTaskId == null || it == selectedTaskId } == true
 
     override fun canMoveTime(target: HitTarget): Boolean =
-        target is HitTarget.BarBody && target.taskId == selectedTaskId
+        editable && target is HitTarget.BarBody && target.taskId == selectedTaskId
 
-    /** Lifts the row for reordering; on a locked board only reports the attempt (no haptic) so the screen can say why. */
+    /** Lifts the row to reorder; on a locked board only reports the attempt (no haptic) so the screen can say why. */
     override fun onLongPress(target: HitTarget) {
         val taskId = rowTaskId(target) ?: return
         if (!editable) {
@@ -196,14 +199,10 @@ internal class TimelineInteraction(
         liftedTaskId = null
     }
 
+    // A task shown read only on a locked board: any tap closes it, unless it lands on a task row, which is shown.
+    private val viewing: Boolean get() = !editable && selectedTaskId != null
+
     override fun onTap(target: HitTarget) {
-        // While editing, any tap on another task only ends editing; tapping again then edits that task.
-        val selected = selectedTaskId
-        val tappedTaskId = rowTaskId(target)
-        if (selected != null && tappedTaskId != null && tappedTaskId != selected) {
-            callbacks.onEmptyTap()
-            return
-        }
         when (target) {
             is HitTarget.BarBody -> tapTask(target.taskId)
 
@@ -211,12 +210,15 @@ internal class TimelineInteraction(
 
             is HitTarget.BarLabel -> tapTask(target.taskId)
 
-            // Blank space in the row being edited does nothing, so a near miss never leaves edit mode.
-            is HitTarget.RowBlank -> if (target.taskId != selectedTaskId) tapTask(target.taskId)
+            // Blank space in the row being edited does nothing, so a near miss never leaves edit mode; a read-only
+            // row is handled like any other row.
+            is HitTarget.RowBlank -> if (target.taskId != selectedTaskId || viewing) tapTask(target.taskId)
 
             // With no selection this is a no-op. In particular, the empty-state Button handles its own click;
             // the same pointer must not immediately close the new draft it just created.
             HitTarget.Empty -> if (selectedTaskId != null) callbacks.onEmptyTap()
+
+            HitTarget.Header -> if (viewing) callbacks.onEmptyTap()
 
             else -> Unit
         }
@@ -304,7 +306,9 @@ internal class TimelineInteraction(
                 val session = drag ?: return@withFrameNanos
                 if (session.kind == DragKind.REORDER) {
                     val y = pointer.y - sizes.headerHeight
-                    val speed = GestureMath.autoScrollSpeed(y, 0f, state.viewportHeightPx, zone, maxSpeed)
+                    // The bottom edge is the sheet's top while it is open, so dragging down still reaches it.
+                    val bottom = (state.viewportHeightPx - state.bottomCoveredPx).coerceAtLeast(0f)
+                    val speed = GestureMath.autoScrollSpeed(y, 0f, bottom, zone, maxSpeed)
                     if (speed != 0f) state.scrollBy(0f, -speed * seconds)
                 } else {
                     // Next to a floating card, its left side is the right edge: the part under it cannot be reached.
@@ -333,16 +337,21 @@ internal class TimelineInteraction(
         }
     }
 
-    // A tap on a left-pane row or label edits the task when its bar is visible, otherwise only scrolls to it.
-
-    /** A visible bar gets selected (unless already edited); an off-screen one only scrolls into view first. */
+    /**
+     * A tap anywhere in a task's row (bar, name, label, blank space); an off-screen bar is scrolled into view first.
+     * On a locked board the task is always shown read only, replacing any task shown. Otherwise, with nothing open, a
+     * visible task opens for editing; while a task is edited, a tap on another one only ends editing, so a near miss
+     * never swaps the edited task.
+     */
     private fun tapTask(taskId: Long) {
         val task = tasks.firstOrNull { it.id == taskId } ?: return
         val barVisible = state.timeToX(task.end.toDouble()) > 0f &&
             state.timeToX(task.start.toDouble()) < state.viewportWidthPx
+        if (!barVisible) scope.launch { state.animateTimeToX(task.start.toDouble(), sizes.scrollToTaskMargin) }
         when {
-            !barVisible -> scope.launch { state.animateTimeToX(task.start.toDouble(), sizes.scrollToTaskMargin) }
-            taskId != selectedTaskId -> callbacks.onTaskTap(taskId)
+            !editable -> callbacks.onTaskTap(taskId)
+            selectedTaskId == null -> if (barVisible) callbacks.onTaskTap(taskId)
+            taskId != selectedTaskId -> callbacks.onEmptyTap()
         }
     }
 

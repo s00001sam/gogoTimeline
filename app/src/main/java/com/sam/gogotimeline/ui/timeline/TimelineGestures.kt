@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 internal interface TimelineGestureHandler {
     fun hitTest(position: Offset): HitTarget
 
-    /** Anywhere in the selected task's row can be long-pressed. */
+    /** Whether a long press here lifts the row for reordering. */
     fun canLongPress(target: HitTarget): Boolean
 
     fun canMoveTime(target: HitTarget): Boolean
@@ -55,8 +55,9 @@ internal interface TimelineGestureHandler {
 /**
  * All timeline gestures in one place so they never compete (spec 13.2 C).
  * - Handles drag right away, and so does a horizontal drag on the selected bar (moves the time).
- * - Any task row reorders after a long press (system timeout, no movement past touch slop) and a vertical drag;
- *   moving past slop first cancels the long press. Anything else scrolls in the locked direction and flings.
+ * - A row reorders after a long press (system timeout, no movement past touch slop) and a vertical drag; which rows
+ *   can be lifted is up to the handler. Moving past slop first cancels the long press. Anything else scrolls in the
+ *   locked direction and flings.
  * - Two fingers zoom and pan, except while dragging a task. A remaining single finger after a pinch does
  *   nothing until all fingers lift.
  * - Releasing without moving past slop and without a long press is a tap.

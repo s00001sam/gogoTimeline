@@ -153,6 +153,10 @@ object LayoutConst {
     const val COLOR_RING_GAP_DP = 2f
     const val COLOR_TOUCH_DP = 40f
 
+    // Read-only sheet of a locked board's task: up to this share of the scheduler's height.
+    const val VIEW_SHEET_MAX_HEIGHT_FRACTION = 0.5f
+    const val VIEW_SHEET_COLOR_DOT_DP = 12f
+
     // Time label near the finger while dragging.
     const val TIME_LABEL_GAP_DP = 8f
     const val TIME_LABEL_CORNER_DP = 4f

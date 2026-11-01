@@ -69,6 +69,9 @@ class TimelineState(
     var viewportHeightPx by mutableFloatStateOf(0f)
         private set
 
+    /** How much of the body's bottom something covers, e.g. the task sheet; edge auto-scroll stops above it. */
+    var bottomCoveredPx by mutableFloatStateOf(0f)
+
     /**
      * A card floating over the scheduler, in the scheduler's own px (e.g. the editor card on wide windows); dragging
      * sideways next to it auto-scrolls at its left edge.

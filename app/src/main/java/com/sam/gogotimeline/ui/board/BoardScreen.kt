@@ -89,6 +89,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sam.gogotimeline.R
@@ -98,6 +99,7 @@ import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.SheetTimeEdit
 import com.sam.gogotimeline.core.time.TaskSchedule
+import com.sam.gogotimeline.core.time.TaskTimeFormat
 import com.sam.gogotimeline.core.time.TaskTimes
 import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeUnit
@@ -113,6 +115,8 @@ import com.sam.gogotimeline.ui.sheet.Boundary
 import com.sam.gogotimeline.ui.sheet.SheetMoment
 import com.sam.gogotimeline.ui.sheet.TaskSheet
 import com.sam.gogotimeline.ui.sheet.TaskSheetState
+import com.sam.gogotimeline.ui.sheet.TaskViewSheet
+import com.sam.gogotimeline.ui.sheet.TaskViewState
 import com.sam.gogotimeline.ui.timeline.TimelineCallbacks
 import com.sam.gogotimeline.ui.timeline.TimelineScheduler
 import com.sam.gogotimeline.ui.timeline.TimelineState
@@ -159,8 +163,9 @@ fun BoardScreen(
     )
     // The bar keeps the last valid times while the sheet shows invalid ones.
     val draft = ready?.edit?.let { it.draft.copy(schedule = it.lastValidSchedule) }
-    val tasks = remember(ready?.tasks, draft, calendar) {
-        tasksWithDraft(ready?.tasks.orEmpty(), draft).map { it.toTimelineTask(calendar) }
+    val draftRow = ready?.edit?.draftRow
+    val tasks = remember(ready?.tasks, draft, draftRow, calendar) {
+        tasksWithDraft(ready?.tasks.orEmpty(), draft, draftRow).map { it.toTimelineTask(calendar) }
     }
     val now = rememberNow()
     val todayDayOfMonth by remember(calendar) { derivedStateOf { calendar.localDate(now.value).dayOfMonth } }
@@ -202,6 +207,16 @@ fun BoardScreen(
             // A failure from the dialog's Save shows in the dialog instead.
             saveFailed = ready.editStatus.saveFailed && !ready.editStatus.confirmingClose,
             isNew = edit.draft.isNew,
+        )
+    }
+
+    val viewer = remember(ready?.viewedTask, calendar) {
+        val task = ready?.viewedTask ?: return@remember null
+        TaskViewState(
+            title = task.title,
+            colorIndex = task.colorIndex,
+            time = TaskTimeFormat.viewText(task.schedule, System.currentTimeMillis(), calendar),
+            notes = task.notes,
         )
     }
 
@@ -287,6 +302,8 @@ fun BoardScreen(
         onCloseEditor = viewModel::onBack,
         onConfirmEdit = { viewModel.onConfirm(calendar) },
         onDeleteTask = viewModel::onDeleteRequest,
+        viewer = viewer,
+        onCloseViewer = viewModel::onBack,
     )
     if (ready?.confirmingLock == true) {
         LockBoardDialog(
@@ -356,6 +373,8 @@ fun BoardContent(
     onCloseEditor: () -> Unit = {},
     onConfirmEdit: () -> Unit = {},
     onDeleteTask: () -> Unit = {},
+    viewer: TaskViewState? = null,
+    onCloseViewer: () -> Unit = {},
     hasBoard: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
@@ -365,21 +384,49 @@ fun BoardContent(
     // The bottom sheet needs height; wide windows edit in a floating card and short narrow ones on a full page (7.1).
     val editorLayout = editorLayout()
     val useSheet = editorLayout == EditorLayout.BOTTOM_SHEET
-    val currentUseSheet by rememberUpdatedState(useSheet)
-    // The sheet stays hidden until a task is edited; it keeps the last content while it slides away.
-    val currentEditing by rememberUpdatedState(sheet != null)
+    // The sheet stays hidden until a task is edited or viewed; it keeps the last content while it slides away.
+    val editing = sheet != null
+    val viewing = viewer != null
+    val sheetOpen = editing || viewing
+    var shownSheet by remember { mutableStateOf(sheet) }
+    if (sheet != null) shownSheet = sheet
+    var shownViewer by remember { mutableStateOf(viewer) }
+    if (viewer != null) shownViewer = viewer
+    // Whether the open (or last open) content is the read-only one; kept while it slides away.
+    var showsViewer by remember { mutableStateOf(false) }
+    if (sheetOpen) showsViewer = viewing
+    // Whether that content goes in the bottom sheet: the editor follows the layout, while the read-only content uses
+    // the bottom sheet everywhere except next to the floating card.
+    val inBottomSheet = if (showsViewer) editorLayout != EditorLayout.FLOATING_CARD else useSheet
+    val currentInBottomSheet by rememberUpdatedState(inBottomSheet)
+    val currentEditing by rememberUpdatedState(editing)
+    val currentViewing by rememberUpdatedState(viewing)
     val currentIsNew by rememberUpdatedState(sheet?.isNew == true)
     val currentOnCloseEditor by rememberUpdatedState(onCloseEditor)
+    val currentOnCloseViewer by rememberUpdatedState(onCloseViewer)
     val sheetState = rememberStandardBottomSheetState(
         initialValue = SheetValue.Hidden,
         // A swipe down from collapsed acts like ×: the sheet snaps back and the close flow decides (it may ask
-        // Save / Discard). Dragging up expands to show the notes. Without the sheet layout it just hides.
+        // Save / Discard). Dragging up expands to show the notes. The read-only sheet never expands, and a swipe down
+        // simply closes it. Hiding the unused sheet (e.g. while the floating card is open) is no swipe and closes
+        // nothing.
         confirmValueChange = { value ->
-            if (value == SheetValue.Hidden && currentEditing && currentUseSheet) {
-                currentOnCloseEditor()
-                false
-            } else {
-                true
+            when {
+                value == SheetValue.Expanded && currentViewing -> false
+
+                value != SheetValue.Hidden || !currentInBottomSheet -> true
+
+                currentEditing -> {
+                    currentOnCloseEditor()
+                    false
+                }
+
+                currentViewing -> {
+                    currentOnCloseViewer()
+                    true
+                }
+
+                else -> true
             }
         },
         skipHiddenState = false,
@@ -403,30 +450,31 @@ fun BoardContent(
             },
         )
     }
-    var shownSheet by remember { mutableStateOf(sheet) }
-    if (sheet != null) shownSheet = sheet
-    val editing = sheet != null
     var sheetHeightPx by remember { mutableIntStateOf(0) }
     val sheetMeasured = sheetHeightPx > 0
-    // Shows the sheet once per edit, after its collapsed part is measured. The peek height reaches the scaffold a
-    // few frames later and asking before that is ignored, so it asks again each frame until the sheet is shown.
-    // Later height changes (keyboard, font size, an error line) only move the anchor; the scaffold follows them
+    // While editing, the collapsed sheet covers the scheduler's bottom; reordering auto-scrolls above it instead.
+    SideEffect { state.bottomCoveredPx = if (editing && useSheet) sheetHeightPx.toFloat() else 0f }
+    // Shows the sheet once per edit or view, after its collapsed part is measured. The peek height reaches the
+    // scaffold a few frames later and asking before that is ignored, so it asks again each frame until the sheet is
+    // shown. Later height changes (keyboard, font size, an error line) only move the anchor; the scaffold follows them
     // frame by frame, so no second animation runs.
-    LaunchedEffect(editing, sheetMeasured, useSheet) {
+    LaunchedEffect(sheetOpen, sheetMeasured, inBottomSheet) {
         when {
             // No sheet, no keyboard: whatever ended editing, the text fields lose focus first.
-            !editing -> {
+            !sheetOpen -> {
                 focusManager.clearFocus(force = true)
                 keyboard?.hide()
                 sheetState.hide()
             }
 
-            // Rotated into the floating card or full page while editing: the sheet steps aside, editing goes on.
-            !useSheet -> sheetState.hide()
+            // Rotated into the floating card or full page while open: the sheet steps aside, the task stays open.
+            !inBottomSheet -> sheetState.hide()
 
-            // A new task opens expanded (spec 7.3); an existing one collapsed.
+            // A new task opens expanded (spec 7.3); an existing one collapsed. Asks until the sheet rests there: it
+            // may already rest collapsed before the first edit, e.g. on a board opened straight into a new task.
             sheetMeasured -> repeat(LayoutConst.SHEET_SHOW_MAX_FRAMES) {
-                if (sheetState.currentValue != SheetValue.Hidden) return@LaunchedEffect
+                val target = if (currentIsNew) SheetValue.Expanded else SheetValue.PartiallyExpanded
+                if (sheetState.currentValue == target) return@LaunchedEffect
                 withFrameNanos {}
                 if (currentIsNew) sheetState.expand() else sheetState.partialExpand()
             }
@@ -449,8 +497,8 @@ fun BoardContent(
             previous = value
         }
     }
-    // When the floating card appears over the edited bar (fully or partly), the bar scrolls out to the left of it like
-    // a tapped off-screen task, so it can still be dragged (spec 7.1). Checked once each time the card appears.
+    // When the floating card appears over the edited or viewed bar (fully or partly), the bar scrolls out to the left
+    // of it like a tapped off-screen task, so it stays visible and draggable (spec 7.1). Checked each time it appears.
     var cardBounds by remember { mutableStateOf(Rect.Zero) }
     val currentCardBounds by rememberUpdatedState(cardBounds)
     val cardShown = editorLayout == EditorLayout.FLOATING_CARD && cardBounds.width > 0f
@@ -468,8 +516,8 @@ fun BoardContent(
         with(density) { (LayoutConst.HEADER_TOP_TIER_HEIGHT_DP + LayoutConst.HEADER_BOTTOM_TIER_HEIGHT_DP).dp.toPx() }
     val rowPx = with(density) { settings.rowHeightDp.dp.toPx() }
     val scrollMarginPx = with(density) { LayoutConst.SCROLL_TO_TASK_MARGIN_DP.dp.toPx() }
-    LaunchedEffect(editing, cardShown) {
-        if (!editing || !cardShown) return@LaunchedEffect
+    LaunchedEffect(sheetOpen, cardShown) {
+        if (!sheetOpen || !cardShown) return@LaunchedEffect
         val row = currentSelectedRow
         val task = currentTasks.getOrNull(row) ?: return@LaunchedEffect
         val card = currentCardBounds
@@ -482,6 +530,16 @@ fun BoardContent(
             cover = FloatRect(card.left, card.top, card.right, card.bottom),
         )
         if (covered) state.animateTimeToX(task.start.toDouble(), scrollMarginPx)
+    }
+    // Showing another task keeps the read-only sheet open; if that row is under the sheet, it moves just above it.
+    // Rows already above stay put, so tapping from task to task never jumps the view.
+    LaunchedEffect(selectedTaskId, sheetHeightPx) {
+        if (!viewing || !inBottomSheet || sheetState.currentValue != SheetValue.PartiallyExpanded) return@LaunchedEffect
+        val row = currentSelectedRow
+        if (row < 0) return@LaunchedEffect
+        val sheetTop = state.viewportHeightPx - sheetHeightPx
+        val rowBottom = (row + 1) * rowPx - state.scrollY
+        if (rowBottom > sheetTop) state.animateRowAbove(row, sheetTop, rowGapPx)
     }
     // Going from expanded to collapsed always closes the keyboard, whether it was for the name or the notes.
     LaunchedEffect(sheetState) {
@@ -509,12 +567,13 @@ fun BoardContent(
             else -> onCloseEditor()
         }
     }
+    BackHandler(enabled = viewing) { onCloseViewer() }
     val paneWidth by animateDpAsState(
         targetValue = leftPaneWidth(isTabletLayout(), settings.leftPaneExpanded),
         animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
         label = "leftPaneWidth",
     )
-    // The keyboard overlays the screen instead of shrinking it: a changing screen height made the scaffold
+    // The keyboard overlays the screen instead of shrinking it: a changing screen height would make the scaffold
     // re-place the sheet a frame late. The sheet lifts itself above the keyboard through its peek height.
     // The same fields outside the sheet: everything at once, no handle.
     val editorContent: @Composable (Modifier) -> Unit = { contentModifier ->
@@ -537,16 +596,45 @@ fun BoardContent(
             )
         }
     }
+    // The read-only sheet is at most half the scheduler's height (spec 9); unknown until the scheduler is measured.
+    var schedulerHeight by remember { mutableStateOf(Dp.Unspecified) }
+    val viewerMaxHeight = if (schedulerHeight.isSpecified) {
+        schedulerHeight * LayoutConst.VIEW_SHEET_MAX_HEIGHT_FRACTION
+    } else {
+        Dp.Infinity
+    }
+    val viewerContent: @Composable (Modifier) -> Unit = { contentModifier ->
+        shownViewer?.let {
+            TaskViewSheet(
+                modifier = contentModifier,
+                state = it,
+                maxHeight = viewerMaxHeight,
+                onClose = onCloseViewer,
+                inSheet = false,
+            )
+        }
+    }
     Box(modifier = modifier.fillMaxSize()) {
         BottomSheetScaffold(
             modifier = Modifier.fillMaxSize(),
             scaffoldState = scaffoldState,
-            sheetPeekHeight = with(LocalDensity.current) { (if (useSheet) sheetHeightPx else 0).toDp() },
+            sheetPeekHeight = with(LocalDensity.current) { (if (inBottomSheet) sheetHeightPx else 0).toDp() },
             sheetDragHandle = null,
             snackbarHost = { SnackbarHost(it, Modifier.windowInsetsPadding(WindowInsets.navigationBars)) },
             sheetContent = {
-                if (useSheet) {
-                    shownSheet?.let {
+                when {
+                    !inBottomSheet -> Unit
+
+                    showsViewer -> shownViewer?.let {
+                        TaskViewSheet(
+                            state = it,
+                            maxHeight = viewerMaxHeight,
+                            onClose = onCloseViewer,
+                            onHeightChange = { height -> sheetHeightPx = height },
+                        )
+                    }
+
+                    else -> shownSheet?.let {
                         TaskSheet(
                             state = it,
                             expanded = sheetState.targetValue == SheetValue.Expanded ||
@@ -642,7 +730,8 @@ fun BoardContent(
                     .padding(top = innerPadding.calculateTopPadding())
                     .fillMaxSize(),
             ) {
-                val schedulerHeight = maxHeight
+                val bodyHeight = maxHeight
+                SideEffect { schedulerHeight = bodyHeight }
                 Box(modifier = Modifier.fillMaxSize()) {
                     TimelineScheduler(
                         modifier = Modifier.fillMaxSize(),
@@ -693,12 +782,13 @@ fun BoardContent(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .onGloballyPositioned { cardBounds = it.boundsInParent() },
-                        visible = editing,
-                        maxHeight = minOf(
-                            schedulerHeight * LayoutConst.DIALOG_HEIGHT_FRACTION,
-                            LayoutConst.DIALOG_MAX_HEIGHT_DP.dp,
-                        ),
-                        content = editorContent,
+                        visible = sheetOpen,
+                        maxHeight = if (showsViewer) {
+                            viewerMaxHeight
+                        } else {
+                            minOf(bodyHeight * LayoutConst.DIALOG_HEIGHT_FRACTION, LayoutConst.DIALOG_MAX_HEIGHT_DP.dp)
+                        },
+                        content = if (showsViewer) viewerContent else editorContent,
                     )
                 }
             }
@@ -1009,11 +1099,13 @@ private fun BoardPreview(
     isError: Boolean = false,
     sheet: TaskSheetState? = null,
     locked: Boolean = false,
+    viewer: TaskViewState? = null,
 ) {
     PreviewSurface {
         BoardContent(
             boardName = if (isLoading || isError) "" else "Sample Project",
             locked = locked,
+            viewer = viewer,
             showNavigation = true,
             state = remember {
                 TimelineState(
@@ -1049,6 +1141,22 @@ private fun BoardReadyPreview() {
 @Composable
 private fun BoardLockedPreview() {
     BoardPreview(tasks = FakeTimelineData.tasks(previewNow, previewCalendar), locked = true)
+}
+
+@ThemePreviews
+@Composable
+private fun BoardLockedViewingPreview() {
+    BoardPreview(
+        tasks = FakeTimelineData.tasks(previewNow, previewCalendar),
+        selectedTaskId = 1L,
+        locked = true,
+        viewer = TaskViewState(
+            title = "Kickoff meeting",
+            colorIndex = 0,
+            time = "Fri, Oct 30  09:00 – 10:30",
+            notes = "Agenda: goals, roles, timeline",
+        ),
+    )
 }
 
 @ThemePreviews

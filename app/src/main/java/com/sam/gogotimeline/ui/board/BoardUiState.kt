@@ -18,8 +18,13 @@ sealed interface BoardUiState {
         val editStatus: EditStatus = EditStatus(),
         /** The first-lock confirmation is showing (spec 9); editing has always ended by then. */
         val confirmingLock: Boolean = false,
+        private val viewingTaskId: Long? = null,
     ) : BoardUiState {
-        val selectedTaskId: Long? get() = edit?.draft?.taskId
+        /** The task shown read only on a locked board; gone once the task is deleted. */
+        val viewedTask: Task? get() = tasks.firstOrNull { it.id == viewingTaskId }
+
+        /** The edited task, or the one shown read only. */
+        val selectedTaskId: Long? get() = edit?.draft?.taskId ?: viewedTask?.id
 
         /** ✓ and the dialog's Save: a valid name and times, and not already saving. */
         val canSave: Boolean get() = edit?.isValid == true && !editStatus.isBusy

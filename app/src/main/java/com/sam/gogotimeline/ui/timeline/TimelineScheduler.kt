@@ -22,7 +22,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -98,7 +97,8 @@ fun TimelineScheduler(
     onZoomChange: (ZoomLevel) -> Unit = {},
     onNewTask: () -> Unit = {},
     showEmptyState: Boolean = true,
-    // False for a locked board: a long press reports onLockedLongPress instead of lifting the row.
+    // False for a locked board: a long press reports onLockedLongPress instead of lifting the row, and the selected
+    // (viewed) row shows only its outline: no handles, no dimmed rows, no snap hint, no dragging.
     editable: Boolean = true,
 ) {
     LaunchedEffect(calendar) { state.calendar = calendar }
@@ -192,6 +192,8 @@ fun TimelineScheduler(
     }
     val rowPx = with(localDensity) { rowHeight.toPx() }
     val snapHintText = snapHintText(interaction.grid().interval)
+    // While a task is edited, every other row fades back; a read-only selection dims nothing.
+    val dimOthers = editable && selectedTaskId != null
 
     Layout(
         modifier = modifier
@@ -212,12 +214,12 @@ fun TimelineScheduler(
                     val task = shownTasks.getValue(index)
                     key(task.id) {
                         ScheduledBar(
-                            modifier = Modifier
-                                .layoutId(index)
-                                .dimmedWhileEditing(selectedTaskId, task.id),
+                            modifier = Modifier.layoutId(index),
                             task = task,
                             index = index,
                             selected = task.id == selectedTaskId,
+                            handles = editable && task.id == selectedTaskId,
+                            dimmed = dimOthers && task.id != selectedTaskId,
                             lifted = task.id == interaction.liftedTaskId,
                             today = today,
                             calendar = calendar,
@@ -245,12 +247,11 @@ fun TimelineScheduler(
                     val task = shownTasks.getValue(index)
                     key(task.id) {
                         ScheduledName(
-                            modifier = Modifier
-                                .layoutId(index)
-                                .dimmedWhileEditing(selectedTaskId, task.id),
+                            modifier = Modifier.layoutId(index),
                             title = task.title,
                             index = index,
                             selected = task.id == selectedTaskId,
+                            dimmed = dimOthers && task.id != selectedTaskId,
                             lifted = task.id == interaction.liftedTaskId,
                             drag = drag,
                             reorderTarget = reorderTarget,
@@ -305,8 +306,8 @@ fun TimelineScheduler(
             },
             {
                 Canvas(Modifier.clipToBounds()) {
-                    // Hidden while dragging, where the live time label takes its place.
-                    if (interaction.drag != null) return@Canvas
+                    // Hidden while dragging, where the live time label takes its place, and on a read-only selection.
+                    if (interaction.drag != null || !editable) return@Canvas
                     val index = rowTasks.indexOfFirst { it.id == selectedTaskId }
                     if (index < 0) return@Canvas
                     val range = interaction.displayRange(rowTasks[index])
@@ -402,6 +403,8 @@ private fun ScheduledBar(
     task: TimelineTask,
     index: Int,
     selected: Boolean,
+    handles: Boolean,
+    dimmed: Boolean,
     lifted: Boolean,
     today: Long,
     calendar: CalendarContext,
@@ -420,10 +423,12 @@ private fun ScheduledBar(
     TaskBar(
         modifier = modifier
             .offset { IntOffset(0, offset.roundToInt()) }
-            .lifted(lifted),
+            .lifted(lifted)
+            .dimmed(dimmed),
         task = task,
         text = text,
         selected = selected,
+        handles = handles,
         textMeasurer = textMeasurer,
         style = style,
         barLeftPx = { barLeftPx(state, task) },
@@ -438,6 +443,7 @@ private fun ScheduledName(
     title: String,
     index: Int,
     selected: Boolean,
+    dimmed: Boolean,
     lifted: Boolean,
     drag: DragSession?,
     reorderTarget: Int?,
@@ -449,7 +455,8 @@ private fun ScheduledName(
     LeftPaneRow(
         modifier = modifier
             .offset { IntOffset(0, offset.roundToInt()) }
-            .lifted(lifted),
+            .lifted(lifted)
+            .dimmed(dimmed),
         title = title,
         styles = styles,
         selected = selected,
@@ -491,11 +498,12 @@ private fun rowOffsetPx(
     }
 }
 
-/** While a task is edited, every other row (bar, time label and left-pane cell) fades back. */
-private fun Modifier.dimmedWhileEditing(
-    selectedTaskId: Long?,
-    taskId: Long,
-): Modifier = if (selectedTaskId != null && selectedTaskId != taskId) alpha(LayoutConst.EDIT_DIM_ALPHA) else this
+/**
+ * Fades a row (bar, time label and left-pane cell) back. Applied after the reorder offset with a layer that does not
+ * clip, so a row sliding past the dragged one stays whole.
+ */
+private fun Modifier.dimmed(dimmed: Boolean): Modifier =
+    if (dimmed) graphicsLayer { alpha = LayoutConst.EDIT_DIM_ALPHA } else this
 
 /** `Current snap interval: 1 day` in bold, then what resizing does. */
 @Composable

@@ -53,6 +53,7 @@ class BoardViewModel @Inject constructor(
     private val edit = MutableStateFlow(EditSession.restore(savedStateHandle))
     private val editStatus = MutableStateFlow(EditStatus())
     private val confirmingLock = MutableStateFlow(false)
+    private val viewingTaskId = MutableStateFlow<Long?>(null)
     private val topRowIndex = MutableStateFlow<Int?>(null)
     private val actionRequests = Channel<BoardAction>(Channel.CONFLATED)
 
@@ -87,21 +88,27 @@ class BoardViewModel @Inject constructor(
         if (boardId.value == id) return
         boardId.value = id
         confirmingLock.value = false
+        viewingTaskId.value = null
     }
 
-    /** A tap on a task starts editing it, unless the board is locked. */
+    /** A tap on a task starts editing it; on a locked board it shows the task read only instead (spec 9). */
     fun onTaskTap(taskId: Long) {
         val state = ready ?: return
-        if (edit.value != null || state.board.locked) return
-        val task = state.tasks.firstOrNull { it.id == taskId } ?: return
-        setEdit(EditSession.from(task))
+        if (edit.value != null) return
+        if (state.board.locked) {
+            viewingTaskId.value = taskId
+            return
+        }
+        val row = state.tasks.indexOfFirst { it.id == taskId }
+        if (row < 0) return
+        setEdit(EditSession.from(state.tasks[row], row))
     }
 
     /** + or the empty state's New task: a draft with [schedule] and a random color, not saved until ✓. */
     fun onNewTask(schedule: TaskSchedule) {
         val state = ready ?: return
         if (edit.value != null || state.board.locked) return
-        setEdit(EditSession.newTask(schedule, Random.nextInt(LayoutConst.TASK_COLOR_COUNT)))
+        setEdit(EditSession.newTask(schedule, Random.nextInt(LayoutConst.TASK_COLOR_COUNT), state.tasks.size))
     }
 
     /** Leaving the board first resolves an unsaved task draft; the app layer performs [action]. */
@@ -114,8 +121,13 @@ class BoardViewModel @Inject constructor(
     fun onToggleLock() = runAfterEditing {
         val state = ready ?: return@runAfterEditing
         when {
-            state.board.locked -> write { boardRepository.setLocked(state.board.id, false) }
+            state.board.locked -> {
+                viewingTaskId.value = null
+                write { boardRepository.setLocked(state.board.id, false) }
+            }
+
             state.settings.lockConfirmed -> write { boardRepository.setLocked(state.board.id, true) }
+
             else -> confirmingLock.value = true
         }
     }
@@ -206,7 +218,7 @@ class BoardViewModel @Inject constructor(
                     notes = TaskNotes.normalize(draft.notes),
                     schedule = schedule ?: draft.schedule,
                 )
-                if (toSave.isNew) createTask(toSave) else taskRepository.saveTask(toSave)
+                if (toSave.isNew) createTask(toSave, session.draftRow) else saveTask(toSave, session)
                 endEditing()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -257,9 +269,19 @@ class BoardViewModel @Inject constructor(
         toIndex: Int,
     ) {
         val board = ready?.board ?: return
-        // The new task's row is only a draft; it gets a place in the database when saved.
-        if (board.locked || taskId == TaskEdit.NEW_TASK_ID) return
-        write { taskRepository.moveTask(board.id, taskId, toIndex) }
+        if (board.locked) return
+        val session = edit.value
+        when {
+            // Not editing: the new order is saved right away.
+            session == null -> write { taskRepository.moveTask(board.id, taskId, toIndex) }
+
+            // The task being edited: its new row is part of the draft, saved with ✓ together with its content, so
+            // a draft order and a saved order never disagree (spec 6.5).
+            session.draft.taskId == taskId && !editStatus.value.isBusy -> setEdit(session.withRow(toIndex))
+
+            // Other rows stay put while a task is edited.
+            else -> Unit
+        }
     }
 
     fun onZoomChange(zoom: ZoomLevel) {
@@ -302,21 +324,46 @@ class BoardViewModel @Inject constructor(
         }
     }
 
-    /** Ends editing right away when nothing changed; otherwise asks Save / Discard. */
+    /** Closes the read-only sheet; ends editing right away when nothing changed, otherwise asks Save / Discard. */
     private fun requestClose() {
+        viewingTaskId.value = null
         val session = edit.value ?: return
         if (editStatus.value.isBusy) return
         if (session.isDirty) editStatus.value = EditStatus(confirmingClose = true) else endEditing()
     }
 
-    /**
-     * Adds the task, then waits until the database list has it, so the draft row is never gone for a frame between
-     * editing ending and the saved row arriving.
-     */
-    private suspend fun createTask(edit: TaskEdit) {
+    /** Adds the task at the draft's row, then waits for it like [saveTask]. */
+    private suspend fun createTask(
+        edit: TaskEdit,
+        row: Int,
+    ) {
         val boardId = ready?.board?.id ?: error("No board")
-        val id = taskRepository.createTask(boardId, edit.title, edit.schedule, edit.colorIndex, edit.notes)
-        uiState.first { state -> (state as? BoardUiState.Ready)?.tasks?.any { it.id == id } == true }
+        val id = taskRepository.createTask(boardId, edit.title, edit.schedule, edit.colorIndex, edit.notes, row)
+        awaitRow(id, row)
+    }
+
+    /** Saves the content and, when the row changed, the new row too, in one transaction. */
+    private suspend fun saveTask(
+        edit: TaskEdit,
+        session: EditSession,
+    ) {
+        val moved = session.draftRow != session.originalRow
+        taskRepository.saveTask(edit, toIndex = if (moved) session.draftRow else null)
+        if (moved) awaitRow(edit.taskId, session.draftRow)
+    }
+
+    // Waits until the database list shows [taskId] at [row], so the row never jumps back for a frame between editing
+    // ending and the saved order arriving.
+    private suspend fun awaitRow(
+        taskId: Long,
+        row: Int,
+    ) {
+        uiState.first { state ->
+            val tasks = (state as? BoardUiState.Ready)?.tasks ?: return@first false
+            val index = tasks.indexOfFirst { it.id == taskId }
+            // Not there yet: keep waiting. On an empty board the list may still be empty, with no row to clamp to.
+            index >= 0 && index == row.coerceIn(0, tasks.lastIndex)
+        }
     }
 
     private fun endEditing() {
@@ -340,12 +387,12 @@ class BoardViewModel @Inject constructor(
                 taskRepository.observeTasks(boardId),
                 settingsRepository.observeSettings(),
                 combine(edit, editStatus, ::Pair),
-                confirmingLock,
-            ) { board, tasks, settings, (edit, editStatus), confirmingLock ->
+                combine(confirmingLock, viewingTaskId, ::Pair),
+            ) { board, tasks, settings, (edit, editStatus), (confirmingLock, viewingTaskId) ->
                 if (board == null) {
                     BoardUiState.Error
                 } else {
-                    BoardUiState.Ready(board, tasks, settings, edit, editStatus, confirmingLock)
+                    BoardUiState.Ready(board, tasks, settings, edit, editStatus, confirmingLock, viewingTaskId)
                 }
             },
         )

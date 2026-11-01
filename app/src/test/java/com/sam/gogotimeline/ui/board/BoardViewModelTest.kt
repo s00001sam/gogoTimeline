@@ -108,7 +108,7 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         assertEquals(later, viewModel.ready.edit!!.draft.schedule)
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
     }
 
     @Test
@@ -184,7 +184,7 @@ class BoardViewModelTest {
         viewModel.onEmptyTap()
         viewModel.onDiscard()
         assertNull(viewModel.ready.edit)
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
     }
 
     @Test
@@ -214,7 +214,7 @@ class BoardViewModelTest {
 
     @Test
     fun failedSaveKeepsTheDraftAndShowsTheError() {
-        coEvery { taskRepository.saveTask(any()) } throws IllegalStateException("disk")
+        coEvery { taskRepository.saveTask(any(), any()) } throws IllegalStateException("disk")
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onEmptyTap()
@@ -229,7 +229,7 @@ class BoardViewModelTest {
     @Test
     fun nothingChangesTheDraftWhileSaving() {
         val saving = CompletableDeferred<Unit>()
-        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { saving.await() }
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onEmptyTap()
@@ -252,7 +252,7 @@ class BoardViewModelTest {
         coVerify(exactly = 0) { taskRepository.deleteTask(any(), any()) }
         viewModel.onDeleteConfirm()
         coVerify { taskRepository.deleteTask(BOARD, B) }
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
         assertNull(viewModel.ready.edit)
         assertEquals(EditStatus(), viewModel.ready.editStatus)
     }
@@ -310,7 +310,7 @@ class BoardViewModelTest {
         assertEquals("Task $B", viewModel.ready.edit!!.draft.title)
         assertEquals(later, viewModel.ready.edit!!.draft.schedule)
         coVerify(exactly = 1) { taskRepository.deleteTask(BOARD, B) }
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
         deleting.complete(Unit)
         assertNull(viewModel.ready.edit)
     }
@@ -367,7 +367,7 @@ class BoardViewModelTest {
     @Test
     fun settingsWhileSavingWaitsAndUnchangedEditingJustEnds() = runTest {
         val saving = CompletableDeferred<Unit>()
-        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { saving.await() }
         val viewModel = viewModel()
         val opened = mutableListOf<BoardAction>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.actions.toList(opened) }
@@ -391,6 +391,47 @@ class BoardViewModelTest {
         viewModel.onTaskMove(B, 0)
         assertNull(viewModel.ready.edit)
         coVerify(exactly = 0) { taskRepository.moveTask(any(), any(), any()) }
+    }
+
+    @Test
+    fun tapOnALockedBoardShowsTheTaskReadOnlyAndAnotherTapReplacesIt() {
+        board.value = board.value!!.copy(locked = true)
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        assertEquals(b, viewModel.ready.viewedTask)
+        assertEquals(B, viewModel.ready.selectedTaskId)
+        assertNull(viewModel.ready.edit)
+        viewModel.onTaskTap(C)
+        assertEquals(c, viewModel.ready.viewedTask)
+    }
+
+    @Test
+    fun readOnlyViewClosesOnEmptyTapBackAndUnlock() {
+        board.value = board.value!!.copy(locked = true)
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onEmptyTap()
+        assertNull(viewModel.ready.viewedTask)
+        viewModel.onTaskTap(B)
+        viewModel.onBack()
+        assertNull(viewModel.ready.viewedTask)
+        viewModel.onTaskTap(B)
+        viewModel.onToggleLock()
+        board.value = board.value!!.copy(locked = false)
+        assertNull(viewModel.ready.viewedTask)
+        assertNull(viewModel.ready.selectedTaskId)
+    }
+
+    @Test
+    fun readOnlyViewOfADeletedTaskOrUnknownIdShowsNothing() {
+        board.value = board.value!!.copy(locked = true)
+        val viewModel = viewModel()
+        viewModel.onTaskTap(99)
+        assertNull(viewModel.ready.viewedTask)
+        viewModel.onTaskTap(B)
+        tasks.value = listOf(a, c)
+        assertNull(viewModel.ready.viewedTask)
+        assertNull(viewModel.ready.selectedTaskId)
     }
 
     // The first-lock confirmation was already accepted, so locking does not ask.
@@ -489,7 +530,7 @@ class BoardViewModelTest {
         assertTrue(viewModel.ready.editStatus.confirmingClose)
         coVerify(exactly = 0) { boardRepository.setLocked(any(), any()) }
         viewModel.onSave(TAIPEI)
-        coVerify { taskRepository.saveTask(any()) }
+        coVerify { taskRepository.saveTask(any(), any()) }
         coVerify(exactly = 1) { boardRepository.setLocked(BOARD, true) }
 
         board.value = board.value!!.copy(locked = false)
@@ -515,7 +556,7 @@ class BoardViewModelTest {
 
     @Test
     fun failedSaveFromTheLockQuestionKeepsEditingAndDoesNotLock() {
-        coEvery { taskRepository.saveTask(any()) } throws IllegalStateException("disk full")
+        coEvery { taskRepository.saveTask(any(), any()) } throws IllegalStateException("disk full")
         lockConfirmedBefore()
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
@@ -534,7 +575,7 @@ class BoardViewModelTest {
         assertTrue(draft.isNew)
         assertEquals(later, draft.schedule)
         assertTrue(draft.colorIndex in 0 until 7)
-        coVerify(exactly = 0) { taskRepository.createTask(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { taskRepository.createTask(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -549,7 +590,7 @@ class BoardViewModelTest {
     @Test
     fun savingANewTaskCreatesItAfterTheLastRow() {
         val created = task(D, 3)
-        coEvery { taskRepository.createTask(any(), any(), any(), any(), any()) } coAnswers {
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } coAnswers {
             tasks.value += created
             D
         }
@@ -558,14 +599,14 @@ class BoardViewModelTest {
         val color = viewModel.ready.edit!!.draft.colorIndex
         viewModel.onTitleChange("  Design review  ")
         viewModel.onConfirm(TAIPEI)
-        coVerify { taskRepository.createTask(BOARD, "Design review", later, color, "") }
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify { taskRepository.createTask(BOARD, "Design review", later, color, "", 3) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
         assertNull(viewModel.ready.edit)
     }
 
     @Test
     fun newTaskEditingEndsOnlyOnceTheSavedRowArrives() {
-        coEvery { taskRepository.createTask(any(), any(), any(), any(), any()) } returns D
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } returns D
         val viewModel = viewModel()
         viewModel.onNewTask(later)
         viewModel.onTitleChange("Design review")
@@ -576,13 +617,72 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun newTaskHasNoDeleteAndItsRowCannotMove() {
+    fun newTaskHasNoDelete() {
         val viewModel = viewModel()
         viewModel.onNewTask(later)
         viewModel.onDeleteRequest()
-        viewModel.onTaskMove(TaskEdit.NEW_TASK_ID, 0)
         assertFalse(viewModel.ready.editStatus.confirmingDelete)
+    }
+
+    @Test
+    fun newTaskMovedToTheTopIsCreatedThereOnSave() {
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } coAnswers {
+            tasks.value = listOf(task(D, 0)) + tasks.value
+            D
+        }
+        val viewModel = viewModel()
+        viewModel.onNewTask(later)
+        viewModel.onTitleChange("Design review")
+        viewModel.onTaskMove(TaskEdit.NEW_TASK_ID, 0)
         coVerify(exactly = 0) { taskRepository.moveTask(any(), any(), any()) }
+        viewModel.onConfirm(TAIPEI)
+        coVerify { taskRepository.createTask(BOARD, "Design review", later, any(), "", 0) }
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun firstTaskOnAnEmptyBoardSavesOnceAndEndsWhenItArrives() {
+        // The database list is still empty right after the insert, with no row yet to compare against.
+        tasks.value = emptyList()
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } returns 9
+        val viewModel = viewModel()
+        viewModel.onNewTask(later)
+        viewModel.onTitleChange("First")
+        viewModel.onConfirm(TAIPEI)
+        assertFalse(viewModel.ready.editStatus.saveFailed)
+        assertTrue(viewModel.ready.editStatus.isSaving)
+        tasks.value = listOf(task(9, 0))
+        assertNull(viewModel.ready.edit)
+        assertEquals(EditStatus(), viewModel.ready.editStatus)
+        coVerify(exactly = 1) { taskRepository.createTask(BOARD, "First", later, any(), "", 0) }
+    }
+
+    @Test
+    fun editedTaskReordersInTheDraftAndSavesWithItsContent() {
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { tasks.value = listOf(b, a, c) }
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onTaskMove(B, 0)
+        assertEquals(0, viewModel.ready.edit!!.draftRow)
+        assertTrue(viewModel.ready.edit!!.isDirty)
+        coVerify(exactly = 0) { taskRepository.moveTask(any(), any(), any()) }
+        viewModel.onConfirm(TAIPEI)
+        coVerify { taskRepository.saveTask(TaskEdit(B, "Task $B", b.schedule, colorIndex = 1), 0) }
+        assertNull(viewModel.ready.edit)
+    }
+
+    @Test
+    fun discardPutsTheEditedRowBackAndOtherRowsCannotMoveWhileEditing() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onTaskMove(A, 2)
+        assertEquals(1, viewModel.ready.edit!!.draftRow)
+        viewModel.onTaskMove(B, 2)
+        viewModel.onEmptyTap()
+        viewModel.onDiscard()
+        assertNull(viewModel.ready.edit)
+        coVerify(exactly = 0) { taskRepository.moveTask(any(), any(), any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
     }
 
     @Test
@@ -595,7 +695,8 @@ class BoardViewModelTest {
 
     @Test
     fun failedCreateKeepsTheNewDraft() {
-        coEvery { taskRepository.createTask(any(), any(), any(), any(), any()) } throws IllegalStateException("disk")
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } throws
+            IllegalStateException("disk")
         val viewModel = viewModel()
         viewModel.onNewTask(later)
         viewModel.onTitleChange("Design review")
@@ -643,7 +744,7 @@ class BoardViewModelTest {
         viewModel.onTaskTap(B)
         viewModel.onTitleChange("Renamed")
         assertEquals("Renamed", viewModel.ready.edit!!.draft.title)
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
     }
 
     @Test
@@ -652,7 +753,7 @@ class BoardViewModelTest {
         viewModel.onTaskTap(B)
         viewModel.onConfirm(TAIPEI)
         assertNull(viewModel.ready.edit)
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
     }
 
     @Test
@@ -673,14 +774,14 @@ class BoardViewModelTest {
         assertFalse(viewModel.ready.canSave)
         viewModel.onConfirm(TAIPEI)
         viewModel.onSave(TAIPEI)
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
         assertEquals(B, viewModel.ready.selectedTaskId)
     }
 
     @Test
     fun nameCannotChangeWhileSaving() {
         val saving = CompletableDeferred<Unit>()
-        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { saving.await() }
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onConfirm(TAIPEI)
@@ -696,7 +797,7 @@ class BoardViewModelTest {
         viewModel.onTaskTap(B)
         viewModel.onColorChange(6)
         assertEquals(6, viewModel.ready.edit!!.draft.colorIndex)
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
     }
 
     @Test
@@ -711,7 +812,7 @@ class BoardViewModelTest {
     @Test
     fun pastedLineBreaksBecomeSpacesAndColorWaitsWhileSaving() {
         val saving = CompletableDeferred<Unit>()
-        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { saving.await() }
         val viewModel = viewModel()
         viewModel.onTaskTap(B)
         viewModel.onTitleChange("Plan\nrelease")
@@ -728,7 +829,7 @@ class BoardViewModelTest {
         viewModel.onTaskTap(B)
         viewModel.onNotesChange("Bring laptops")
         assertEquals("Bring laptops", viewModel.ready.edit!!.draft.notes)
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
         viewModel.onEmptyTap()
         assertTrue(viewModel.ready.editStatus.confirmingClose)
     }
@@ -753,7 +854,7 @@ class BoardViewModelTest {
         )
         assertFalse(viewModel.ready.canSave)
         viewModel.onConfirm(TAIPEI)
-        coVerify(exactly = 0) { taskRepository.saveTask(any()) }
+        coVerify(exactly = 0) { taskRepository.saveTask(any(), any()) }
     }
 
     @Test
@@ -771,7 +872,7 @@ class BoardViewModelTest {
     @Test
     fun timesAndAllDayWaitWhileSaving() {
         val saving = CompletableDeferred<Unit>()
-        coEvery { taskRepository.saveTask(any()) } coAnswers { saving.await() }
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { saving.await() }
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onConfirm(TAIPEI)

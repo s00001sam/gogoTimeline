@@ -31,7 +31,7 @@ import com.sam.gogotimeline.ui.theme.GogoTimelineTheme
  * One task bar with its time label on a translucent backing. The label always shows, overflowing the bar
  * when it does not fit, and sticks to the visible left edge when the bar starts off screen. When the whole
  * bar is off screen, the label stays at the left edge of the time axis with ‹ (earlier) or › (later).
- * The selected task shows an outline and no label.
+ * The selected task shows an outline and no label, plus resize handles when [handles] is true.
  */
 @Composable
 internal fun TaskBar(
@@ -39,6 +39,7 @@ internal fun TaskBar(
     task: TimelineTask,
     text: String,
     selected: Boolean,
+    handles: Boolean = selected,
     textMeasurer: TextMeasurer,
     style: TextStyle,
     barLeftPx: () -> Float,
@@ -63,6 +64,7 @@ internal fun TaskBar(
                         cornerRadius = corner,
                         style = Stroke(stroke),
                     )
+                    if (!handles) return@drawBehind
                     // Handles straddle both edges, half inside and half outside the bar.
                     val handleSize = Size(
                         LayoutConst.HANDLE_VISUAL_WIDTH_DP.dp.toPx(),

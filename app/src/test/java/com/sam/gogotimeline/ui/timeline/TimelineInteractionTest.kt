@@ -104,13 +104,55 @@ class TimelineInteractionTest {
     }
 
     @Test
-    fun lockedBoardStillScrollsToAnOffScreenTaskOnTapAndIgnoresEmptyLongPress() = runTest {
+    fun lockedBoardScrollsToAndShowsAnOffScreenTaskAndIgnoresEmptyLongPress() = runTest {
         val (interaction, state, recorder) = setUp(editable = false)
         interaction.onLongPress(HitTarget.Empty)
         interaction.onTap(HitTarget.LeftPaneRow(2))
         advanceUntilIdle()
-        assertTrue(recorder.events.isEmpty())
+        assertEquals(listOf("tap 2"), recorder.events)
         assertEquals(MARGIN, state.timeToX(offScreenRight.start.toDouble()), 0.01f)
+    }
+
+    @Test
+    fun readOnlySelectionHasNoHandlesOrTimeDrag() = runTest {
+        val (interaction, state, _) = setUp(selectedTaskId = 1, editable = false)
+        val barLeft = axis(state.timeToX(visible.start.toDouble()))
+        assertFalse(interaction.hitTest(Offset(barLeft, rowY(0))) is HitTarget.StartHandle)
+        assertFalse(interaction.canMoveTime(HitTarget.BarBody(1)))
+        assertTrue(interaction.canLongPress(HitTarget.BarLabel(3)))
+    }
+
+    @Test
+    fun readOnlySheetShowsAnotherVisibleTask() = runTest {
+        val (interaction, _, recorder) = setUp(selectedTaskId = 1, editable = false)
+        interaction.onTap(HitTarget.BarLabel(3))
+        assertEquals(listOf("tap 3"), recorder.events)
+    }
+
+    @Test
+    fun readOnlySheetKeepsItsOwnVisibleRowAndClosesOnTheHeaderOrBelowTheRows() = runTest {
+        val (interaction, _, recorder) = setUp(selectedTaskId = 1, editable = false)
+        interaction.onTap(HitTarget.RowBlank(1))
+        interaction.onTap(HitTarget.Header)
+        interaction.onTap(HitTarget.Empty)
+        assertEquals(listOf("tap 1", "empty", "empty"), recorder.events)
+    }
+
+    @Test
+    fun readOnlySheetScrollsToAndShowsAnOffScreenTask() = runTest {
+        val (interaction, state, recorder) = setUp(selectedTaskId = 1, editable = false)
+        interaction.onTap(HitTarget.LeftPaneRow(2))
+        advanceUntilIdle()
+        assertEquals(listOf("tap 2"), recorder.events)
+        assertEquals(MARGIN, state.timeToX(offScreenRight.start.toDouble()), 0.01f)
+    }
+
+    @Test
+    fun headerTapWhileEditingKeepsEditing() = runTest {
+        val (interaction, _, recorder) = setUp(selectedTaskId = 1)
+        interaction.onTap(HitTarget.Header)
+        interaction.onTap(HitTarget.RowBlank(1))
+        assertTrue(recorder.events.isEmpty())
     }
 
     @Test
@@ -157,6 +199,16 @@ class TimelineInteractionTest {
     }
 
     @Test
+    fun whileEditingOnlyTheEditedRowCanBeLongPressed() = runTest {
+        val (interaction, _, _) = setUp(selectedTaskId = 1)
+        assertTrue(interaction.canLongPress(HitTarget.BarBody(1)))
+        assertTrue(interaction.canLongPress(HitTarget.LeftPaneRow(1)))
+        assertTrue(interaction.canLongPress(HitTarget.RowBlank(1)))
+        assertFalse(interaction.canLongPress(HitTarget.LeftPaneRow(2)))
+        assertFalse(interaction.canLongPress(HitTarget.BarLabel(3)))
+    }
+
+    @Test
     fun onlyTheSelectedBarMovesTime() = runTest {
         val (interaction, _, _) = setUp(selectedTaskId = 1)
         assertTrue(interaction.canMoveTime(HitTarget.BarBody(1)))
@@ -189,7 +241,7 @@ class TimelineInteractionTest {
         val (interaction, _, recorder) = setUp(selectedTaskId = 1)
         interaction.onTap(HitTarget.RowBlank(1))
         assertTrue(recorder.events.isEmpty())
-        interaction.onTap(HitTarget.RowBlank(2))
+        interaction.onTap(HitTarget.RowBlank(3))
         assertEquals(listOf("empty"), recorder.events)
     }
 
@@ -276,19 +328,21 @@ class TimelineInteractionTest {
     }
 
     @Test
-    fun editingThenTappingAnotherBarOnlyEndsEditing() = runTest {
-        val (interaction, _, recorder) = setUp(selectedTaskId = 1)
+    fun editingThenTappingAnotherVisibleBarOnlyEndsEditing() = runTest {
+        val (interaction, state, recorder) = setUp(selectedTaskId = 1)
         interaction.onTap(HitTarget.BarBody(3))
+        advanceUntilIdle()
         assertEquals(listOf("empty"), recorder.events)
+        assertEquals(noon, state.centerTime, 0.0)
     }
 
     @Test
-    fun editingThenTappingAnOffScreenNameDoesNotScroll() = runTest {
+    fun editingThenTappingAnOffScreenTaskScrollsToItAndEndsEditing() = runTest {
         val (interaction, state, recorder) = setUp(selectedTaskId = 1)
         interaction.onTap(HitTarget.LeftPaneRow(2))
         advanceUntilIdle()
         assertEquals(listOf("empty"), recorder.events)
-        assertEquals(noon, state.centerTime, 0.0)
+        assertEquals(MARGIN, state.timeToX(offScreenRight.start.toDouble()), 0.01f)
     }
 
     @Test

@@ -117,4 +117,22 @@ class BoardDisplayTest {
         assertEquals(listOf(TaskEdit.NEW_TASK_ID), shown.map { it.id })
         assertEquals(0, shown.single().sortOrder)
     }
+
+    @Test
+    fun draftRowMovesTheEditedTask() {
+        val shown = tasksWithDraft(domainTasks, TaskEdit(1, "Task 1", later, colorIndex = 0), draftRow = 2)
+        assertEquals(listOf(2L, 3L, 1L), shown.map { it.id })
+    }
+
+    @Test
+    fun newTaskDraftCanSitAtTheTop() {
+        val shown = tasksWithDraft(domainTasks, TaskEdit(TaskEdit.NEW_TASK_ID, "", later, 2), draftRow = 0)
+        assertEquals(listOf(TaskEdit.NEW_TASK_ID, 1L, 2L, 3L), shown.map { it.id })
+    }
+
+    @Test
+    fun draftRowPastTheEndStaysLast() {
+        val shown = tasksWithDraft(domainTasks, TaskEdit(1, "Task 1", later, colorIndex = 0), draftRow = 99)
+        assertEquals(listOf(2L, 3L, 1L), shown.map { it.id })
+    }
 }
