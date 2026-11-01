@@ -5,7 +5,13 @@ Compose. The first launch creates a Sample Project board, so it can be tried rig
 
 ## Screenshots
 
-<!-- Screenshots go here. -->
+
+<img src="https://github.com/user-attachments/assets/f133bdb8-4b76-4d3c-9203-24436d469022" width=300></img>|<img src="https://github.com/user-attachments/assets/986bad29-53be-4594-95c5-c9c4461198eb" width=300></img>
+--- | ---
+
+<img src="https://github.com/user-attachments/assets/8bb9e8a8-5e60-45a6-af9e-1ffc7884efdd" width=1600></img>
+
+
 
 ## Features
 
