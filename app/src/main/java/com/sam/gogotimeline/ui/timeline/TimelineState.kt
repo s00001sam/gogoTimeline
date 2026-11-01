@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Velocity
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.TimeConst
+import com.sam.gogotimeline.core.gesture.FloatRect
 import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TimeLimits
@@ -67,6 +68,13 @@ class TimelineState(
         private set
     var viewportHeightPx by mutableFloatStateOf(0f)
         private set
+
+    /**
+     * A card floating over the scheduler, in the scheduler's own px (e.g. the editor card on wide windows); dragging
+     * sideways next to it auto-scrolls at its left edge.
+     */
+    var coveredRect by mutableStateOf<FloatRect?>(null)
+
     private var rowCount by mutableIntStateOf(0)
     private var rowHeightPx by mutableFloatStateOf(0f)
 

@@ -94,8 +94,8 @@ object LayoutConst {
     // Left pane
     const val NAME_COLUMN_PHONE_COLLAPSED_DP = 100f
     const val NAME_COLUMN_PHONE_EXPANDED_DP = 200f
-    const val NAME_COLUMN_TABLET_COLLAPSED_DP = 180f
-    const val NAME_COLUMN_TABLET_EXPANDED_DP = 320f
+    const val NAME_COLUMN_TABLET_COLLAPSED_DP = 120f
+    const val NAME_COLUMN_TABLET_EXPANDED_DP = 220f
     const val LEFT_PANE_PADDING_DP = 8f
     const val NAME_MAX_LINES = 2
     const val LEFT_PANE_ANIMATION_MILLIS = 300
@@ -262,8 +262,17 @@ object LayoutConst {
     const val DIALOG_HEIGHT_FRACTION = 0.8f
     const val DIALOG_CORNER_RADIUS_DP = 28f
 
+    // Task editor card over the scheduler's bottom right on wide windows (spec 7.1); its height limit reuses the page
+    // dialogs' 80%, at most 560dp.
+    // Just wide enough for the seven color circles (7 × 40dp) plus the side padding.
+    const val EDITOR_CARD_WIDTH_DP = 320f
+    const val EDITOR_CARD_MARGIN_DP = 16f
+    const val EDITOR_CARD_CORNER_DP = 16f
+    const val EDITOR_CARD_ELEVATION_DP = 6f
+    const val EDITOR_PANEL_ANIMATION_MILLIS = 300
+
     // Drawer
-    const val DRAWER_WIDTH_DP = 300f
+    const val DRAWER_WIDTH_DP = 240f
     const val DRAWER_PADDING_DP = 16f
     const val DRAWER_ITEM_SPACING_DP = 2f
 }

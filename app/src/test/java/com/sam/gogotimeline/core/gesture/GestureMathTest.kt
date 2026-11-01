@@ -1,6 +1,7 @@
 package com.sam.gogotimeline.core.gesture
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -96,6 +97,71 @@ class GestureMathTest {
     fun rowLinesNeedARowHeight() {
         assertTrue(GestureMath.rowLineYs(0f, 0f, 300f).isEmpty())
         assertTrue(GestureMath.rowLineYs(0f, ROW, 0f).isEmpty())
+    }
+
+    // The editor card in the bottom right of an 800 × 1000 scheduler.
+    private val card = FloatRect(left = 424f, top = 440f, right = 784f, bottom = 984f)
+
+    @Test
+    fun barUnderTheCardIsCoveredEvenPartly() {
+        assertTrue(GestureMath.isCovered(500f, 700f, 600f, 664f, card))
+        assertTrue(GestureMath.isCovered(100f, 500f, 600f, 664f, card))
+    }
+
+    @Test
+    fun barTouchingTheCardEdgeIsNotCovered() {
+        assertFalse(GestureMath.isCovered(100f, 424f, 600f, 664f, card))
+        assertFalse(GestureMath.isCovered(500f, 700f, 376f, 440f, card))
+    }
+
+    @Test
+    fun barAboveTheCardOrFarOffScreenIsNotCovered() {
+        assertFalse(GestureMath.isCovered(500f, 700f, 100f, 164f, card))
+        assertFalse(GestureMath.isCovered(-50_000f, -40_000f, 600f, 664f, card))
+        // A bar spanning far past both sides of the card at its height still counts.
+        assertTrue(GestureMath.isCovered(-50_000f, 50_000f, 600f, 664f, card))
+    }
+
+    @Test
+    fun barEdgeThatStartedOnScreenDecidesInsteadOfTheFinger() {
+        // A long bar held near its left: its right edge at 390 is already near the 400px edge.
+        assertEquals(390f, GestureMath.autoScrollPosition(edgeX = 390f, fingerX = 120f, edgeStartedOnScreen = true))
+    }
+
+    @Test
+    fun fastDragPastTheSideKeepsFollowingTheEdge() {
+        // The reported bug: a quick drag carried the edge past the card, and scrolling stopped.
+        assertEquals(650f, GestureMath.autoScrollPosition(edgeX = 650f, fingerX = 300f, edgeStartedOnScreen = true))
+        assertEquals(MAX_SPEED, speed(650f), EPSILON)
+    }
+
+    @Test
+    fun edgeThatStartedOffScreenFollowsTheFinger() {
+        assertEquals(120f, GestureMath.autoScrollPosition(edgeX = 5_000f, fingerX = 120f, edgeStartedOnScreen = false))
+        assertEquals(120f, GestureMath.autoScrollPosition(edgeX = -5_000f, fingerX = 120f, edgeStartedOnScreen = false))
+    }
+
+    @Test
+    fun fingerLevelWithTheCardScrollsAtItsLeftSide() {
+        assertEquals(424f, GestureMath.autoScrollRightEdge(pointerY = 700f, screenRight = 800f, cover = card), EPSILON)
+    }
+
+    @Test
+    fun fingerAboveTheCardOrWithoutOneUsesTheScreenEdge() {
+        assertEquals(800f, GestureMath.autoScrollRightEdge(pointerY = 200f, screenRight = 800f, cover = card), EPSILON)
+        assertEquals(800f, GestureMath.autoScrollRightEdge(pointerY = 700f, screenRight = 800f, cover = null), EPSILON)
+        // Exactly on the card's top edge already counts as level with it.
+        assertEquals(424f, GestureMath.autoScrollRightEdge(pointerY = 440f, screenRight = 800f, cover = card), EPSILON)
+    }
+
+    @Test
+    fun cardPastTheScreenNeverPushesTheEdgeOutward() {
+        val offScreen = FloatRect(left = 900f, top = 440f, right = 1_200f, bottom = 984f)
+        assertEquals(
+            800f,
+            GestureMath.autoScrollRightEdge(pointerY = 700f, screenRight = 800f, cover = offScreen),
+            EPSILON,
+        )
     }
 
     @Test

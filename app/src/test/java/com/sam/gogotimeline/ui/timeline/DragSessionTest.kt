@@ -112,6 +112,37 @@ class DragSessionTest {
         assertEquals(drag.original, drag.previewRange(time("15:00"), hourGrid))
     }
 
+    private fun range(
+        start: String,
+        end: String,
+    ) = TimeRange(TAIPEI.at("2026-10-30T$start"), TAIPEI.at("2026-10-30T$end"))
+
+    @Test
+    fun movingRightLeadsWithTheEndAndLeftWithTheStart() {
+        val move = session(DragKind.MOVE)
+        assertEquals(TAIPEI.at("2026-10-30T12:00"), move.leadingEdgeTime(range("11:00", "12:00")))
+        assertEquals(TAIPEI.at("2026-10-30T07:00"), move.leadingEdgeTime(range("07:00", "08:00")))
+    }
+
+    @Test
+    fun resizingLeadsWithTheDraggedEdgeAndAnUnmovedBarWithItsEnd() {
+        assertEquals(
+            TAIPEI.at("2026-10-30T08:00"),
+            session(DragKind.RESIZE_START).leadingEdgeTime(range("08:00", "10:00")),
+        )
+        assertEquals(
+            TAIPEI.at("2026-10-30T13:00"),
+            session(DragKind.RESIZE_END).leadingEdgeTime(range("09:00", "13:00")),
+        )
+        // Not moved yet: treated as heading right, so the end leads.
+        assertEquals(TAIPEI.at("2026-10-30T10:00"), session(DragKind.MOVE).leadingEdgeTime(range("09:00", "10:00")))
+    }
+
+    @Test
+    fun reorderingHasNoLeadingEdge() {
+        assertEquals(null, session(DragKind.REORDER).leadingEdgeTime(range("09:00", "10:00")))
+    }
+
     private companion object {
         const val ROW = 100f
         const val ROW_COUNT = 5

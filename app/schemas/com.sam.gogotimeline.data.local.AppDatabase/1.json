@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "36c0e2686b075697d1c9ac59bb0796ab",
+    "identityHash": "9bd8054eda215b019e394a0acbe035ee",
     "entities": [
       {
         "tableName": "boards",
@@ -144,7 +144,7 @@
       },
       {
         "tableName": "settings",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `unit` TEXT NOT NULL, `dpPerUnit` REAL NOT NULL, `widthMultiplier` REAL NOT NULL, `snapHourMinutes` INTEGER NOT NULL, `snapDayMinutes` INTEGER NOT NULL, `snapWeekMinutes` INTEGER NOT NULL, `snapMonthMinutes` INTEGER NOT NULL, `rowHeightDp` REAL NOT NULL, `leftPaneExpanded` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `unit` TEXT NOT NULL, `dpPerUnit` REAL NOT NULL, `widthMultiplier` REAL NOT NULL, `snapHourMinutes` INTEGER NOT NULL, `snapDayMinutes` INTEGER NOT NULL, `snapWeekMinutes` INTEGER NOT NULL, `snapMonthMinutes` INTEGER NOT NULL, `rowHeightDp` REAL NOT NULL, `leftPaneExpanded` INTEGER NOT NULL, `drawerExpanded` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -205,6 +205,12 @@
             "columnName": "leftPaneExpanded",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "drawerExpanded",
+            "columnName": "drawerExpanded",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -217,7 +223,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '36c0e2686b075697d1c9ac59bb0796ab')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9bd8054eda215b019e394a0acbe035ee')"
     ]
   }
 }

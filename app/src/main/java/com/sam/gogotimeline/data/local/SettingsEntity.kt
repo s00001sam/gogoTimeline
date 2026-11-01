@@ -17,6 +17,7 @@ data class SettingsEntity(
     val snapMonthMinutes: Int,
     val rowHeightDp: Float,
     val leftPaneExpanded: Boolean,
+    val drawerExpanded: Boolean,
 ) {
     companion object {
         const val ID = 0

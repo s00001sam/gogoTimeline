@@ -29,4 +29,6 @@ interface SettingsLocalDataSource {
     suspend fun updateRowHeight(dp: Float)
 
     suspend fun updateLeftPaneExpanded(expanded: Boolean)
+
+    suspend fun updateDrawerExpanded(expanded: Boolean)
 }

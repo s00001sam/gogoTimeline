@@ -60,6 +60,7 @@ fun AppNavigation(
 ) {
     val boards by viewModel.boards.collectAsStateWithLifecycle()
     val deleteState by viewModel.deleteState.collectAsStateWithLifecycle()
+    val drawerExpanded by viewModel.drawerExpanded.collectAsStateWithLifecycle()
     val backStack = rememberNavBackStack(StartRoute)
     val tablet = isTabletLayout()
     LaunchedEffect(boards) {
@@ -118,6 +119,8 @@ fun AppNavigation(
                         boards = boards.orEmpty(),
                         currentBoardId = route.boardId,
                         tablet = tablet,
+                        tabletDrawerExpanded = drawerExpanded,
+                        onToggleTabletDrawer = viewModel::toggleDrawer,
                         onBoardSelected = { boardViewModel.onAppAction(BoardAction.SwitchBoard(it)) },
                         onNewBoard = { boardViewModel.onAppAction(BoardAction.CreateBoard) },
                         onRenameBoard = { id ->
@@ -142,7 +145,6 @@ fun AppNavigation(
                                 backStack[backStack.lastIndex] = route.copy(openNewTask = false)
                             },
                             onAppAction = performAction,
-                            showNavigation = !tablet,
                             onOpenDrawer = openDrawer,
                             interactionBlocked = drawerOpen,
                             viewModel = boardViewModel,

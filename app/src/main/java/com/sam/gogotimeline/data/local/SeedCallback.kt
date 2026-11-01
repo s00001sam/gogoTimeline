@@ -68,4 +68,5 @@ private fun SettingsEntity.toValues() = ContentValues().apply {
     put("snapMonthMinutes", snapMonthMinutes)
     put("rowHeightDp", rowHeightDp)
     put("leftPaneExpanded", if (leftPaneExpanded) 1 else 0)
+    put("drawerExpanded", if (drawerExpanded) 1 else 0)
 }

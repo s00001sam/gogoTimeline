@@ -10,6 +10,14 @@ enum class DragDirection {
     VERTICAL,
 }
 
+/** A rectangle in px; core code does not depend on Compose's Rect. */
+data class FloatRect(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+)
+
 /** Gesture math in px: direction lock, reorder, edge auto-scroll, and vertical scrolling. */
 object GestureMath {
     /**
@@ -73,6 +81,44 @@ object GestureMath {
         rowCount: Int,
         rowHeightPx: Float,
     ): Float = scrollY.coerceIn(0f, ((rowCount - 1) * rowHeightPx).coerceAtLeast(0f))
+
+    /**
+     * Whether a bar (x from [barLeft] to [barRight], y from [barTop] to [barBottom]) is at least partly under a
+     * rectangle such as the floating editor card, all in the same px coordinates. Touching edges do not count.
+     */
+    fun isCovered(
+        barLeft: Float,
+        barRight: Float,
+        barTop: Float,
+        barBottom: Float,
+        cover: FloatRect,
+    ): Boolean = barLeft < cover.right && barRight > cover.left && barTop < cover.bottom && barBottom > cover.top
+
+    /**
+     * Where sideways edge auto-scroll measures from: the bar's leading edge ([edgeX]) when that edge was on screen as
+     * the drag began, so a long bar scrolls once its edge nears the side whatever part the finger holds, and keeps
+     * scrolling even after a fast drag carries the edge past the side; otherwise the finger ([fingerX]), or a bar
+     * whose edge starts off screen would race from the first touch.
+     */
+    fun autoScrollPosition(
+        edgeX: Float,
+        fingerX: Float,
+        edgeStartedOnScreen: Boolean,
+    ): Float = if (edgeStartedOnScreen) edgeX else fingerX
+
+    /**
+     * The right edge for horizontal edge auto-scroll: [screenRight] normally, but [cover]'s left side when the finger
+     * ([pointerY]) is level with it, since the part under the floating card cannot be reached.
+     */
+    fun autoScrollRightEdge(
+        pointerY: Float,
+        screenRight: Float,
+        cover: FloatRect?,
+    ): Float = if (cover != null && pointerY >= cover.top && pointerY <= cover.bottom) {
+        minOf(cover.left, screenRight)
+    } else {
+        screenRight
+    }
 
     /** Row boundary lines across the viewport, blank rows included: the y of each, in body px. */
     fun rowLineYs(

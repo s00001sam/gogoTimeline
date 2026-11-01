@@ -64,6 +64,7 @@ class EntityMappersTest {
             ),
             rowHeightDp = 80f,
             leftPaneExpanded = true,
+            drawerExpanded = false,
         )
         assertEquals(settings, settings.toEntity().toDomain())
     }

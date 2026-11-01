@@ -66,6 +66,11 @@ internal class TimelineInteraction(
     var liftedTaskId by mutableStateOf<Long?>(null)
         private set
 
+    // Whether the dragged bar's start and end were on screen when the drag began; edge auto-scroll follows an edge
+    // only if it started on screen.
+    private var startEdgeOnScreen = false
+    private var endEdgeOnScreen = false
+
     // Kept after release until the new times come back in the tasks, so the bar never flashes back for a frame.
     private var released by mutableStateOf<Pair<Long, TimeRange>?>(null)
 
@@ -221,6 +226,8 @@ internal class TimelineInteraction(
         if (index < 0) return
         val task = tasks[index]
         pointer = downPosition
+        startEdgeOnScreen = state.timeToX(task.start.toDouble()) in 0f..state.viewportWidthPx
+        endEdgeOnScreen = state.timeToX(task.end.toDouble()) in 0f..state.viewportWidthPx
         drag = DragSession(
             taskId = taskId,
             kind = kind,
@@ -269,8 +276,9 @@ internal class TimelineInteraction(
     }
 
     /**
-     * While a drag runs, scrolls when the finger is near an edge of the body: horizontally for move/resize,
-     * vertically for reorder, faster closer to the edge. Speed is per second, so the frame rate does not matter.
+     * While a drag runs, scrolls near an edge of the body: sideways for move/resize when the bar's leading edge nears
+     * it, vertically for reorder when the finger does, faster closer to the edge. Speed is per second, so the frame
+     * rate does not matter.
      */
     suspend fun autoScroll(
         zone: Float,
@@ -287,8 +295,26 @@ internal class TimelineInteraction(
                     val speed = GestureMath.autoScrollSpeed(y, 0f, state.viewportHeightPx, zone, maxSpeed)
                     if (speed != 0f) state.scrollBy(0f, -speed * seconds)
                 } else {
-                    val x = pointer.x - state.axisLeftPx
-                    val speed = GestureMath.autoScrollSpeed(x, 0f, state.viewportWidthPx, zone, maxSpeed)
+                    // Next to a floating card, its left side is the right edge: the part under it cannot be reached.
+                    val right = GestureMath.autoScrollRightEdge(
+                        pointerY = pointer.y,
+                        screenRight = state.axisLeftPx + state.viewportWidthPx,
+                        cover = state.coveredRect,
+                    ) - state.axisLeftPx
+                    // The bar's leading edge decides, not the finger, which may hold a long bar far from that edge.
+                    val fingerX = pointer.x - state.axisLeftPx
+                    val preview = previewRange()
+                    val edgeTime = preview?.let { session.leadingEdgeTime(it) }
+                    val x = if (edgeTime == null) {
+                        fingerX
+                    } else {
+                        GestureMath.autoScrollPosition(
+                            edgeX = state.timeToX(edgeTime.toDouble()),
+                            fingerX = fingerX,
+                            edgeStartedOnScreen = if (edgeTime == preview.end) endEdgeOnScreen else startEdgeOnScreen,
+                        )
+                    }
+                    val speed = GestureMath.autoScrollSpeed(x, 0f, right, zone, maxSpeed)
                     if (speed != 0f) state.scrollBy(-speed * seconds, 0f)
                 }
             }

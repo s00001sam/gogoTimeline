@@ -134,6 +134,8 @@ private enum class OpenPicker(
  * sheet to full screen below the status bar and shows the notes, which grow with their text while the whole sheet
  * scrolls. The sheet can only expand by revealing content under the collapsed part, so it is as tall as the screen
  * allows. [onCollapsedHeightChange] reports the peek height in px. Everything follows the system font size.
+ * Outside a bottom sheet ([inSheet] false: the floating card or the full page, spec 7.1) there is no drag handle, it
+ * is as tall as its content, and the caller passes [expanded] true, so everything shows at once.
  */
 @Composable
 fun TaskSheet(
@@ -151,6 +153,7 @@ fun TaskSheet(
     onConfirm: () -> Unit,
     onDelete: () -> Unit,
     onCollapsedHeightChange: (Int) -> Unit = {},
+    inSheet: Boolean = true,
 ) {
     val focusManager = LocalFocusManager.current
     val density = LocalDensity.current
@@ -174,8 +177,9 @@ fun TaskSheet(
     val scroll = rememberScrollState()
     LaunchedEffect(expanded) { if (!expanded) scroll.scrollTo(0) }
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        // Full height minus the status bar, so the expanded sheet stops right below it.
-        val fullHeight = if (constraints.hasBoundedHeight) {
+        // A sheet is as tall as the screen allows below the status bar, so it can expand; the card and the page wrap
+        // their content up to the height they are given, scrolling beyond it.
+        val fullHeight = if (inSheet && constraints.hasBoundedHeight) {
             Modifier.height(with(density) { (constraints.maxHeight - statusBarPx).coerceAtLeast(0).toDp() })
         } else {
             Modifier
@@ -199,6 +203,7 @@ fun TaskSheet(
                 },
                 state = state,
                 focusName = focusName,
+                showHandle = inSheet,
                 onNameBottomInRoot = { nameBottomPx = it },
                 onTitleChange = onTitleChange,
                 onDatePick = onDatePick,
@@ -234,6 +239,7 @@ private fun CollapsedPart(
     modifier: Modifier = Modifier,
     state: TaskSheetState,
     focusName: Boolean,
+    showHandle: Boolean,
     onNameBottomInRoot: (Float) -> Unit,
     onTitleChange: (String) -> Unit,
     onDatePick: (Boundary, LocalDate) -> Unit,
@@ -269,14 +275,16 @@ private fun CollapsedPart(
                 )
             }
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Box(
-                    modifier = Modifier
-                        .size(LayoutConst.SHEET_HANDLE_WIDTH_DP.dp, LayoutConst.SHEET_HANDLE_HEIGHT_DP.dp)
-                        .background(
-                            colorScheme.onSurfaceVariant.copy(alpha = LayoutConst.SHEET_HANDLE_ALPHA),
-                            RoundedCornerShape(LayoutConst.SHEET_HANDLE_HEIGHT_DP.dp),
-                        ),
-                )
+                if (showHandle) {
+                    Box(
+                        modifier = Modifier
+                            .size(LayoutConst.SHEET_HANDLE_WIDTH_DP.dp, LayoutConst.SHEET_HANDLE_HEIGHT_DP.dp)
+                            .background(
+                                colorScheme.onSurfaceVariant.copy(alpha = LayoutConst.SHEET_HANDLE_ALPHA),
+                                RoundedCornerShape(LayoutConst.SHEET_HANDLE_HEIGHT_DP.dp),
+                            ),
+                    )
+                }
             }
             FilledIconButton(
                 onClick = onConfirm,

@@ -40,6 +40,17 @@ data class DragSession(
         }
     }
 
+    /**
+     * The time of the bar's edge that leads the drag, which decides sideways edge auto-scroll: the dragged edge when
+     * resizing, and when moving, the end going right or the start going left. Null while reordering.
+     */
+    fun leadingEdgeTime(preview: TimeRange): Long? = when (kind) {
+        DragKind.RESIZE_START -> preview.start
+        DragKind.RESIZE_END -> preview.end
+        DragKind.MOVE -> if (preview.start >= original.start) preview.end else preview.start
+        DragKind.REORDER -> null
+    }
+
     /** Row the dragged row would be inserted at; only reordering moves it. */
     fun targetIndex(
         contentY: Float,

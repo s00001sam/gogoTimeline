@@ -80,14 +80,27 @@ class SettingsRepositoryImplTest {
     }
 
     @Test
-    fun resetKeepsUnitAndPaneAndScalesTheWidthBack() = runTest {
-        // 2x with Hour pinched to 192dp goes back to 1x at 96dp (spec 8).
-        coEvery { settings.get() } returns stored.copy(zoom = ZoomLevel(TimeUnit.HOUR, 192f), widthMultiplier = 2f)
-            .toEntity()
+    fun resetKeepsUnitPaneAndDrawerAndScalesTheWidthBack() = runTest {
+        // 2x with Hour pinched to 192dp goes back to 1x at 96dp (spec 8); a closed tablet drawer stays closed.
+        coEvery { settings.get() } returns stored.copy(
+            zoom = ZoomLevel(TimeUnit.HOUR, 192f),
+            widthMultiplier = 2f,
+            drawerExpanded = false,
+        ).toEntity()
         coEvery { settings.insert(any()) } answers { assertTrue(transaction.active) }
         repository.resetToDefaults()
-        val expected = TimelineSettings.DEFAULT.copy(zoom = ZoomLevel(TimeUnit.HOUR, 96f), leftPaneExpanded = true)
+        val expected = TimelineSettings.DEFAULT.copy(
+            zoom = ZoomLevel(TimeUnit.HOUR, 96f),
+            leftPaneExpanded = true,
+            drawerExpanded = false,
+        )
         coVerify { settings.insert(expected.toEntity()) }
+    }
+
+    @Test
+    fun drawerStateIsSavedOnItsOwn() = runTest {
+        repository.setDrawerExpanded(false)
+        coVerify { settings.updateDrawerExpanded(false) }
     }
 
     @Test

@@ -76,6 +76,7 @@ fun SettingsEntity.toDomain(): TimelineSettings = TimelineSettings(
     ),
     rowHeightDp = rowHeightDp,
     leftPaneExpanded = leftPaneExpanded,
+    drawerExpanded = drawerExpanded,
 )
 
 fun TimelineSettings.toEntity(): SettingsEntity = SettingsEntity(
@@ -88,6 +89,7 @@ fun TimelineSettings.toEntity(): SettingsEntity = SettingsEntity(
     snapMonthMinutes = snapFor(TimeUnit.MONTH).minutes,
     rowHeightDp = rowHeightDp,
     leftPaneExpanded = leftPaneExpanded,
+    drawerExpanded = drawerExpanded,
 )
 
 private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()

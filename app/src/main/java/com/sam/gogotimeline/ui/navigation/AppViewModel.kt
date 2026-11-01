@@ -3,7 +3,9 @@ package com.sam.gogotimeline.ui.navigation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sam.gogotimeline.data.model.Board
+import com.sam.gogotimeline.data.model.TimelineSettings
 import com.sam.gogotimeline.data.repository.BoardRepository
+import com.sam.gogotimeline.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -12,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -35,10 +38,31 @@ data class BoardDeleted(
  * a board lives here because it can target any board, not just the one on screen.
  */
 @HiltViewModel
-class AppViewModel @Inject constructor(private val boardRepository: BoardRepository) : ViewModel() {
+class AppViewModel @Inject constructor(
+    private val boardRepository: BoardRepository,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
     /** Null until the first read. */
     val boards: StateFlow<List<Board>?> = boardRepository.observeBoards()
         .stateIn<List<Board>?>(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Tablets: whether the docked drawer is shown; saved so it stays across boards and launches. */
+    val drawerExpanded: StateFlow<Boolean> = settingsRepository.observeSettings()
+        .map { it.drawerExpanded }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, TimelineSettings.DEFAULT.drawerExpanded)
+
+    fun toggleDrawer() {
+        val expanded = !drawerExpanded.value
+        // A failed write leaves the drawer as the database has it, like the left pane's toggle.
+        viewModelScope.launch {
+            try {
+                settingsRepository.setDrawerExpanded(expanded)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     private val mutableDeleteState = MutableStateFlow<DeleteBoardState?>(null)
     val deleteState: StateFlow<DeleteBoardState?> = mutableDeleteState

@@ -50,4 +50,7 @@ interface SettingsDao {
 
     @Query("UPDATE settings SET leftPaneExpanded = :expanded WHERE id = ${SettingsEntity.ID}")
     suspend fun updateLeftPaneExpanded(expanded: Boolean)
+
+    @Query("UPDATE settings SET drawerExpanded = :expanded WHERE id = ${SettingsEntity.ID}")
+    suspend fun updateDrawerExpanded(expanded: Boolean)
 }

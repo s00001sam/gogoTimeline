@@ -7,19 +7,31 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,12 +46,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,8 +68,11 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -68,11 +85,14 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
+import com.sam.gogotimeline.core.gesture.FloatRect
+import com.sam.gogotimeline.core.gesture.GestureMath
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.SheetTimeEdit
 import com.sam.gogotimeline.core.time.TaskSchedule
@@ -82,6 +102,8 @@ import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.core.time.ZoomRules
 import com.sam.gogotimeline.data.model.TimelineSettings
+import com.sam.gogotimeline.ui.EditorLayout
+import com.sam.gogotimeline.ui.editorLayout
 import com.sam.gogotimeline.ui.isTabletLayout
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
@@ -114,7 +136,6 @@ fun BoardScreen(
     openNewTask: Boolean = false,
     onNewTaskOpened: () -> Unit = {},
     onAppAction: (BoardAction) -> Unit = {},
-    showNavigation: Boolean = false,
     onOpenDrawer: () -> Unit = {},
     interactionBlocked: Boolean = false,
     viewModel: BoardViewModel = hiltViewModel(),
@@ -226,7 +247,8 @@ fun BoardScreen(
         onSettingsClick = { viewModel.onAppAction(BoardAction.OpenSettings) },
         onRenameBoard = { viewModel.onAppAction(BoardAction.RenameBoard) },
         onDeleteBoard = { viewModel.onAppAction(BoardAction.DeleteBoard) },
-        showNavigation = showNavigation,
+        // ☰ on phones and tablets alike: it opens the modal drawer, or shows / hides the docked one (spec 9).
+        showNavigation = true,
         onOpenDrawer = onOpenDrawer,
         interactionBlocked = interactionBlocked,
         // Starts at "now" floored to the current snap and lasts two of the current unit (spec 7.3); an off-screen
@@ -325,6 +347,10 @@ fun BoardContent(
     val interactive = hasBoard && !isLoading && !isError
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    // The bottom sheet needs height; wide windows edit in a floating card and short narrow ones on a full page (7.1).
+    val editorLayout = editorLayout()
+    val useSheet = editorLayout == EditorLayout.BOTTOM_SHEET
+    val currentUseSheet by rememberUpdatedState(useSheet)
     // The sheet stays hidden until a task is edited; it keeps the last content while it slides away.
     val currentEditing by rememberUpdatedState(sheet != null)
     val currentIsNew by rememberUpdatedState(sheet?.isNew == true)
@@ -332,11 +358,11 @@ fun BoardContent(
     val sheetState = rememberStandardBottomSheetState(
         initialValue = SheetValue.Hidden,
         // A swipe down from collapsed acts like ×: the sheet snaps back and the close flow decides (it may ask
-        // Save / Discard). Dragging up expands to show the notes.
+        // Save / Discard). Dragging up expands to show the notes. Without the sheet layout it just hides.
         confirmValueChange = { value ->
-            if (value == SheetValue.Hidden) {
-                if (currentEditing) currentOnCloseEditor()
-                !currentEditing
+            if (value == SheetValue.Hidden && currentEditing && currentUseSheet) {
+                currentOnCloseEditor()
+                false
             } else {
                 true
             }
@@ -353,7 +379,7 @@ fun BoardContent(
     // few frames later and asking before that is ignored, so it asks again each frame until the sheet is shown.
     // Later height changes (keyboard, font size, an error line) only move the anchor; the scaffold follows them
     // frame by frame, so no second animation runs.
-    LaunchedEffect(editing, sheetMeasured) {
+    LaunchedEffect(editing, sheetMeasured, useSheet) {
         when {
             // No sheet, no keyboard: whatever ended editing, the text fields lose focus first.
             !editing -> {
@@ -361,6 +387,9 @@ fun BoardContent(
                 keyboard?.hide()
                 sheetState.hide()
             }
+
+            // Rotated into the floating card or full page while editing: the sheet steps aside, editing goes on.
+            !useSheet -> sheetState.hide()
 
             // A new task opens expanded (spec 7.3); an existing one collapsed.
             sheetMeasured -> repeat(LayoutConst.SHEET_SHOW_MAX_FRAMES) {
@@ -386,6 +415,40 @@ fun BoardContent(
             }
             previous = value
         }
+    }
+    // When the floating card appears over the edited bar (fully or partly), the bar scrolls out to the left of it like
+    // a tapped off-screen task, so it can still be dragged (spec 7.1). Checked once each time the card appears.
+    var cardBounds by remember { mutableStateOf(Rect.Zero) }
+    val currentCardBounds by rememberUpdatedState(cardBounds)
+    val cardShown = editorLayout == EditorLayout.FLOATING_CARD && cardBounds.width > 0f
+    // Dragging a bar sideways next to the card auto-scrolls at the card's left edge.
+    SideEffect {
+        state.coveredRect = if (editing && cardShown) {
+            FloatRect(cardBounds.left, cardBounds.top, cardBounds.right, cardBounds.bottom)
+        } else {
+            null
+        }
+    }
+    val currentTasks by rememberUpdatedState(tasks)
+    val density = LocalDensity.current
+    val headerPx =
+        with(density) { (LayoutConst.HEADER_TOP_TIER_HEIGHT_DP + LayoutConst.HEADER_BOTTOM_TIER_HEIGHT_DP).dp.toPx() }
+    val rowPx = with(density) { settings.rowHeightDp.dp.toPx() }
+    val scrollMarginPx = with(density) { LayoutConst.SCROLL_TO_TASK_MARGIN_DP.dp.toPx() }
+    LaunchedEffect(editing, cardShown) {
+        if (!editing || !cardShown) return@LaunchedEffect
+        val row = currentSelectedRow
+        val task = currentTasks.getOrNull(row) ?: return@LaunchedEffect
+        val card = currentCardBounds
+        val barTop = headerPx + row * rowPx - state.scrollY
+        val covered = GestureMath.isCovered(
+            barLeft = state.axisLeftPx + state.timeToX(task.start.toDouble()),
+            barRight = state.axisLeftPx + state.timeToX(task.end.toDouble()),
+            barTop = barTop,
+            barBottom = barTop + rowPx,
+            cover = FloatRect(card.left, card.top, card.right, card.bottom),
+        )
+        if (covered) state.animateTimeToX(task.start.toDouble(), scrollMarginPx)
     }
     // Going from expanded to collapsed always closes the keyboard, whether it was for the name or the notes.
     LaunchedEffect(sheetState) {
@@ -420,152 +483,271 @@ fun BoardContent(
     )
     // The keyboard overlays the screen instead of shrinking it: a changing screen height made the scaffold
     // re-place the sheet a frame late. The sheet lifts itself above the keyboard through its peek height.
-    BottomSheetScaffold(
-        modifier = modifier.fillMaxSize(),
-        scaffoldState = scaffoldState,
-        sheetPeekHeight = with(LocalDensity.current) { sheetHeightPx.toDp() },
-        sheetDragHandle = null,
-        sheetContent = {
-            shownSheet?.let {
-                TaskSheet(
-                    state = it,
-                    expanded = sheetState.targetValue == SheetValue.Expanded ||
-                        sheetState.currentValue == SheetValue.Expanded,
-                    focusName = sheet?.isNew == true,
-                    onTitleChange = onTitleChange,
-                    onNotesChange = onNotesChange,
-                    onDatePick = onDatePick,
-                    onTimePick = onTimePick,
-                    onAllDayChange = onAllDayChange,
-                    onColorChange = onColorChange,
-                    onClose = onCloseEditor,
-                    onConfirm = onConfirmEdit,
-                    onDelete = onDeleteTask,
-                    onCollapsedHeightChange = { sheetHeightPx = it },
-                )
-            }
-        },
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        boardName,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    if (showNavigation) {
-                        IconButton(onClick = onOpenDrawer) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_menu),
-                                contentDescription = stringResource(R.string.open_boards),
-                            )
-                        }
+    // The same fields outside the sheet: everything at once, no handle.
+    val editorContent: @Composable (Modifier) -> Unit = { contentModifier ->
+        shownSheet?.let {
+            TaskSheet(
+                modifier = contentModifier,
+                state = it,
+                expanded = true,
+                focusName = sheet?.isNew == true,
+                onTitleChange = onTitleChange,
+                onNotesChange = onNotesChange,
+                onDatePick = onDatePick,
+                onTimePick = onTimePick,
+                onAllDayChange = onAllDayChange,
+                onColorChange = onColorChange,
+                onClose = onCloseEditor,
+                onConfirm = onConfirmEdit,
+                onDelete = onDeleteTask,
+                inSheet = false,
+            )
+        }
+    }
+    Box(modifier = modifier.fillMaxSize()) {
+        BottomSheetScaffold(
+            modifier = Modifier.fillMaxSize(),
+            scaffoldState = scaffoldState,
+            sheetPeekHeight = with(LocalDensity.current) { (if (useSheet) sheetHeightPx else 0).toDp() },
+            sheetDragHandle = null,
+            sheetContent = {
+                if (useSheet) {
+                    shownSheet?.let {
+                        TaskSheet(
+                            state = it,
+                            expanded = sheetState.targetValue == SheetValue.Expanded ||
+                                sheetState.currentValue == SheetValue.Expanded,
+                            focusName = sheet?.isNew == true,
+                            onTitleChange = onTitleChange,
+                            onNotesChange = onNotesChange,
+                            onDatePick = onDatePick,
+                            onTimePick = onTimePick,
+                            onAllDayChange = onAllDayChange,
+                            onColorChange = onColorChange,
+                            onClose = onCloseEditor,
+                            onConfirm = onConfirmEdit,
+                            onDelete = onDeleteTask,
+                            onCollapsedHeightChange = { sheetHeightPx = it },
+                        )
                     }
-                },
-                actions = {
-                    if (interactive) {
-                        // No IconButton / TextButton: their 48dp boxes spread the three apart. Each draws its own
-                        // circular ripple a little beyond its content, with a fixed gap between them.
-                        val gap = topBarActionGap()
-                        Row(
-                            modifier = Modifier.padding(end = gap),
-                            horizontalArrangement = Arrangement.spacedBy(gap),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            TodayButton(dayOfMonth = todayDayOfMonth, onClick = onGoToToday)
-                            Text(
-                                text = stringResource(state.unit.labelRes()),
-                                modifier = Modifier.topBarAction {
-                                    scope.launch {
-                                        val target = ZoomRules.unitButtonTarget(
-                                            state.unit,
-                                            state.dpPerUnit,
-                                            state.widthMultiplier,
-                                        )
-                                        state.animateZoomTo(target)
-                                        onZoomChange(target)
+                }
+            },
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            boardName,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    navigationIcon = {
+                        if (showNavigation) {
+                            IconButton(onClick = onOpenDrawer) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_menu),
+                                    contentDescription = stringResource(R.string.open_boards),
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        if (interactive) {
+                            // No IconButton / TextButton: their 48dp boxes spread the three apart. Each draws its own
+                            // circular ripple a little beyond its content, with a fixed gap between them.
+                            val gap = topBarActionGap()
+                            Row(
+                                modifier = Modifier.padding(end = gap),
+                                horizontalArrangement = Arrangement.spacedBy(gap),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                TodayButton(dayOfMonth = todayDayOfMonth, onClick = onGoToToday)
+                                Text(
+                                    text = stringResource(state.unit.labelRes()),
+                                    modifier = Modifier.topBarAction {
+                                        scope.launch {
+                                            val target = ZoomRules.unitButtonTarget(
+                                                state.unit,
+                                                state.dpPerUnit,
+                                                state.widthMultiplier,
+                                            )
+                                            state.animateZoomTo(target)
+                                            onZoomChange(target)
+                                        }
+                                    },
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                                OverflowMenu(
+                                    onSettingsClick = onSettingsClick,
+                                    onRenameClick = onRenameBoard,
+                                    onDeleteClick = onDeleteBoard,
+                                )
+                            }
+                        }
+                    },
+                )
+            },
+        ) { innerPadding ->
+            // Only the top bar's padding: the bottom one reserves the sheet's peek height even while it is hidden,
+            // and the sheet is meant to float over the scheduler (spec 7.1).
+            BoxWithConstraints(
+                modifier = Modifier
+                    .padding(top = innerPadding.calculateTopPadding())
+                    .fillMaxSize(),
+            ) {
+                val schedulerHeight = maxHeight
+                Box(modifier = Modifier.fillMaxSize()) {
+                    TimelineScheduler(
+                        modifier = Modifier.fillMaxSize(),
+                        state = state,
+                        calendar = calendar,
+                        tasks = tasks,
+                        leftPaneWidth = paneWidth,
+                        leftPaneExpanded = settings.leftPaneExpanded,
+                        onToggleLeftPane = onToggleLeftPane,
+                        rowHeight = settings.rowHeightDp.dp,
+                        selectedTaskId = selectedTaskId,
+                        snapIntervals = settings.snapIntervals,
+                        widthMultiplier = settings.widthMultiplier,
+                        callbacks = callbacks,
+                        onZoomChange = onZoomChange,
+                        onNewTask = onNewTask,
+                        showEmptyState = interactive,
+                    )
+                    if (interactionBlocked) {
+                        // The drawer scrim may not consume the first down event while its opening animation starts.
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                        }
                                     }
                                 },
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                            OverflowMenu(
-                                onSettingsClick = onSettingsClick,
-                                onRenameClick = onRenameBoard,
-                                onDeleteClick = onDeleteBoard,
-                            )
-                        }
+                        )
                     }
-                },
-            )
-        },
-    ) { innerPadding ->
-        // Only the top bar's padding: the bottom one reserves the sheet's peek height even while it is hidden,
-        // and the sheet is meant to float over the scheduler (spec 7.1).
-        Box(
-            modifier = Modifier
-                .padding(top = innerPadding.calculateTopPadding())
-                .fillMaxSize(),
-        ) {
-            TimelineScheduler(
-                modifier = Modifier.fillMaxSize(),
-                state = state,
-                calendar = calendar,
-                tasks = tasks,
-                leftPaneWidth = paneWidth,
-                leftPaneExpanded = settings.leftPaneExpanded,
-                onToggleLeftPane = onToggleLeftPane,
-                rowHeight = settings.rowHeightDp.dp,
-                selectedTaskId = selectedTaskId,
-                snapIntervals = settings.snapIntervals,
-                widthMultiplier = settings.widthMultiplier,
-                callbacks = callbacks,
-                onZoomChange = onZoomChange,
-                onNewTask = onNewTask,
-                showEmptyState = interactive,
-            )
-            if (interactionBlocked) {
-                // The drawer scrim may not consume the first down event while its opening animation starts.
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                                }
-                            }
-                        },
-                )
-            }
-            // Hidden while editing so it never covers the sheet (spec 7.3).
-            AnimatedVisibility(
-                visible = interactive && tasks.isNotEmpty() && !editing,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(LayoutConst.FAB_MARGIN_DP.dp),
-                enter = fadeIn(tween(LayoutConst.FAB_FADE_MILLIS)),
-                exit = fadeOut(tween(LayoutConst.FAB_FADE_MILLIS)),
-            ) {
-                FloatingActionButton(
-                    onClick = onNewTask,
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_add),
-                        contentDescription = stringResource(R.string.new_task),
+                    NewTaskButton(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(LayoutConst.FAB_MARGIN_DP.dp),
+                        visible = interactive && tasks.isNotEmpty() && !editing,
+                        onClick = onNewTask,
+                    )
+                    if (!interactive) {
+                        StatusOverlay(isError = isError, onRetry = onRetry)
+                    }
+                }
+                if (editorLayout == EditorLayout.FLOATING_CARD) {
+                    FloatingEditorCard(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .onGloballyPositioned { cardBounds = it.boundsInParent() },
+                        visible = editing,
+                        maxHeight = minOf(
+                            schedulerHeight * LayoutConst.DIALOG_HEIGHT_FRACTION,
+                            LayoutConst.DIALOG_MAX_HEIGHT_DP.dp,
+                        ),
+                        content = editorContent,
                     )
                 }
             }
-            if (!interactive) {
-                StatusOverlay(isError = isError, onRetry = onRetry)
-            }
+        }
+        if (editorLayout == EditorLayout.FULL_PAGE) {
+            FullPageEditor(visible = editing, content = editorContent)
+        }
+    }
+}
+
+/** The + button; hidden while editing so it never covers the editor (spec 7.3). */
+@Composable
+private fun NewTaskButton(
+    modifier: Modifier = Modifier,
+    visible: Boolean,
+    onClick: () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(tween(LayoutConst.FAB_FADE_MILLIS)),
+        exit = fadeOut(tween(LayoutConst.FAB_FADE_MILLIS)),
+    ) {
+        FloatingActionButton(
+            onClick = onClick,
+            shape = CircleShape,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_add),
+                contentDescription = stringResource(R.string.new_task),
+            )
+        }
+    }
+}
+
+/**
+ * The editor on wide windows: a card over the scheduler's bottom right, as tall as its content up to [maxHeight],
+ * sliding in from the right. It covers the scheduler without squeezing it (spec 7.1).
+ */
+@Composable
+private fun FloatingEditorCard(
+    modifier: Modifier = Modifier,
+    visible: Boolean,
+    maxHeight: Dp,
+    content: @Composable (Modifier) -> Unit,
+) {
+    val slide = tween<IntOffset>(LayoutConst.EDITOR_PANEL_ANIMATION_MILLIS)
+    val fade = tween<Float>(LayoutConst.EDITOR_PANEL_ANIMATION_MILLIS)
+    AnimatedVisibility(
+        visible = visible,
+        // Clear of a side navigation bar or cutout on landscape phones, of the bottom navigation bar, and of the
+        // keyboard, which lifts the card while typing.
+        modifier = modifier
+            .windowInsetsPadding(
+                WindowInsets.navigationBars.union(WindowInsets.displayCutout).union(WindowInsets.ime)
+                    .only(WindowInsetsSides.End + WindowInsetsSides.Bottom),
+            )
+            // Flush with the right edge; only the bottom keeps a gap.
+            .padding(bottom = LayoutConst.EDITOR_CARD_MARGIN_DP.dp),
+        enter = slideInHorizontally(slide) { it } + fadeIn(fade),
+        exit = slideOutHorizontally(slide) { it } + fadeOut(fade),
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(LayoutConst.EDITOR_CARD_WIDTH_DP.dp)
+                .heightIn(max = maxHeight),
+            shape = RoundedCornerShape(LayoutConst.EDITOR_CARD_CORNER_DP.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = LayoutConst.EDITOR_CARD_ELEVATION_DP.dp,
+        ) {
+            // The card already sits above the navigation bar and keyboard, so the fields add no padding of their own.
+            content(Modifier.consumeWindowInsets(WindowInsets.navigationBars.union(WindowInsets.ime)))
+        }
+    }
+}
+
+/** The editor on short, narrow windows: the whole screen from the start, no collapsed state (spec 7.1). */
+@Composable
+private fun FullPageEditor(
+    visible: Boolean,
+    content: @Composable (Modifier) -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(LayoutConst.EDITOR_PANEL_ANIMATION_MILLIS)),
+        exit = fadeOut(tween(LayoutConst.EDITOR_PANEL_ANIMATION_MILLIS)),
+    ) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+            content(
+                Modifier.windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+                ),
+            )
         }
     }
 }

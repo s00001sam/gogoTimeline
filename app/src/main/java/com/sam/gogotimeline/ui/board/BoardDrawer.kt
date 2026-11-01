@@ -1,6 +1,10 @@
 package com.sam.gogotimeline.ui.board
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -58,8 +62,9 @@ import com.sam.gogotimeline.ui.preview.ThemePreviews
 import kotlinx.coroutines.launch
 
 /**
- * The board list around [content] (spec 9). Tablets: always shown on the left with a divider. Phones: a modal drawer
- * opened only by ☰ ([content]'s `openDrawer`); edge swipes stay off so they never fight the scheduler's scrolling.
+ * The board list around [content] (spec 9). Tablets: docked on the left with a divider, shown or hidden by ☰
+ * ([content]'s `openDrawer` calls [onToggleTabletDrawer]) and pushing the scheduler rather than covering it. Phones: a
+ * modal drawer opened only by ☰; edge swipes stay off so they never fight the scheduler's scrolling.
  */
 @Composable
 fun BoardDrawerLayout(
@@ -67,6 +72,8 @@ fun BoardDrawerLayout(
     boards: List<Board>,
     currentBoardId: Long,
     tablet: Boolean,
+    tabletDrawerExpanded: Boolean,
+    onToggleTabletDrawer: () -> Unit,
     onBoardSelected: (Long) -> Unit,
     onNewBoard: () -> Unit,
     onRenameBoard: (Long) -> Unit,
@@ -75,19 +82,30 @@ fun BoardDrawerLayout(
 ) {
     if (tablet) {
         Row(modifier.fillMaxSize()) {
-            BoardDrawerContent(
-                modifier = Modifier
-                    .width(LayoutConst.DRAWER_WIDTH_DP.dp)
-                    .fillMaxHeight(),
-                boards = boards,
-                currentBoardId = currentBoardId,
-                onBoardSelected = { id -> if (id != currentBoardId) onBoardSelected(id) },
-                onNewBoard = onNewBoard,
-                onRenameBoard = onRenameBoard,
-                onDeleteBoard = onDeleteBoard,
-            )
-            VerticalDivider()
-            Box(Modifier.weight(1f)) { content({}, false) }
+            AnimatedVisibility(
+                visible = tabletDrawerExpanded,
+                enter = expandHorizontally(tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS), expandFrom = Alignment.Start),
+                exit = shrinkHorizontally(
+                    tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
+                    shrinkTowards = Alignment.Start,
+                ),
+            ) {
+                Row {
+                    BoardDrawerContent(
+                        modifier = Modifier
+                            .width(LayoutConst.DRAWER_WIDTH_DP.dp)
+                            .fillMaxHeight(),
+                        boards = boards,
+                        currentBoardId = currentBoardId,
+                        onBoardSelected = { id -> if (id != currentBoardId) onBoardSelected(id) },
+                        onNewBoard = onNewBoard,
+                        onRenameBoard = onRenameBoard,
+                        onDeleteBoard = onDeleteBoard,
+                    )
+                    VerticalDivider()
+                }
+            }
+            Box(Modifier.weight(1f)) { content(onToggleTabletDrawer, false) }
         }
         return
     }

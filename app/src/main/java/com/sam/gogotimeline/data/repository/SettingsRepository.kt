@@ -24,9 +24,11 @@ interface SettingsRepository {
 
     suspend fun setLeftPaneExpanded(expanded: Boolean)
 
+    suspend fun setDrawerExpanded(expanded: Boolean)
+
     /**
-     * Resets the settings page's values: multiplier, row height and all four snap intervals. The current unit and the
-     * left pane stay; the width scales back with the multiplier.
+     * Resets the settings page's values: multiplier, row height and all four snap intervals. The current unit, the
+     * left pane and the tablet drawer stay; the width scales back with the multiplier.
      */
     suspend fun resetToDefaults()
 }

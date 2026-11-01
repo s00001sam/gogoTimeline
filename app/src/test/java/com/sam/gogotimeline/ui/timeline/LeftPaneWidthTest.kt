@@ -18,12 +18,12 @@ class LeftPaneWidthTest {
 
     @Test
     fun tabletCollapsed() {
-        assertEquals(180.dp, leftPaneWidth(isTablet = true, expanded = false))
+        assertEquals(120.dp, leftPaneWidth(isTablet = true, expanded = false))
     }
 
     @Test
     fun tabletExpanded() {
-        assertEquals(320.dp, leftPaneWidth(isTablet = true, expanded = true))
+        assertEquals(220.dp, leftPaneWidth(isTablet = true, expanded = true))
     }
 
     @Test
@@ -39,6 +39,6 @@ class LeftPaneWidthTest {
         assertEquals(260.dp, smallPhone - leftPaneWidth(isTablet = false, expanded = false))
         assertEquals(160.dp, smallPhone - leftPaneWidth(isTablet = false, expanded = true))
         val narrowestTablet = 600.dp
-        assertEquals(280.dp, narrowestTablet - leftPaneWidth(isTablet = true, expanded = true))
+        assertEquals(380.dp, narrowestTablet - leftPaneWidth(isTablet = true, expanded = true))
     }
 }

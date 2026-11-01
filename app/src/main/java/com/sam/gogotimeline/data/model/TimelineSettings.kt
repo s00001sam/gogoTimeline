@@ -13,6 +13,8 @@ data class TimelineSettings(
     val snapIntervals: Map<TimeUnit, SnapInterval>,
     val rowHeightDp: Float,
     val leftPaneExpanded: Boolean,
+    /** Tablets only: whether the docked board drawer is shown (spec 9). */
+    val drawerExpanded: Boolean,
 ) {
     fun snapFor(unit: TimeUnit): SnapInterval = snapIntervals[unit] ?: SnapInterval.default(unit)
 
@@ -23,6 +25,7 @@ data class TimelineSettings(
             snapIntervals = TimeUnit.entries.associateWith { SnapInterval.default(it) },
             rowHeightDp = LayoutConst.ROW_HEIGHT_DEFAULT_DP,
             leftPaneExpanded = false,
+            drawerExpanded = true,
         )
     }
 }

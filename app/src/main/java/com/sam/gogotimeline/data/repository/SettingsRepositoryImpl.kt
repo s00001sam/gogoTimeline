@@ -38,12 +38,18 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setLeftPaneExpanded(expanded: Boolean) = settingsDataSource.updateLeftPaneExpanded(expanded)
 
+    override suspend fun setDrawerExpanded(expanded: Boolean) = settingsDataSource.updateDrawerExpanded(expanded)
+
     override suspend fun resetToDefaults() = transaction.run {
         val current = current()
         val defaults = TimelineSettings.DEFAULT
         val zoom = ZoomRules.rescale(current.zoom, current.widthMultiplier, defaults.widthMultiplier)
         settingsDataSource.insert(
-            defaults.copy(zoom = zoom, leftPaneExpanded = current.leftPaneExpanded).toEntity(),
+            defaults.copy(
+                zoom = zoom,
+                leftPaneExpanded = current.leftPaneExpanded,
+                drawerExpanded = current.drawerExpanded,
+            ).toEntity(),
         )
     }
 
