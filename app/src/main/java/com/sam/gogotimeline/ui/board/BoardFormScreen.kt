@@ -8,12 +8,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
@@ -28,9 +28,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -43,6 +46,7 @@ import com.sam.gogotimeline.data.model.Board
 import com.sam.gogotimeline.ui.navigation.PageDialogFrame
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
+import com.sam.gogotimeline.ui.sheet.FilledField
 
 /**
  * Create a board ([board] null) or rename one (spec 9): a full page on phones, a dialog on tablets ([asDialog]). When
@@ -123,7 +127,13 @@ fun BoardFormContent(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(if (creating) R.string.new_board else R.string.rename_board)) },
+                // Same size as the board's own top bar title.
+                title = {
+                    Text(
+                        text = stringResource(if (creating) R.string.new_board else R.string.rename_board),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                },
                 navigationIcon = {
                     if (dismissible) {
                         IconButton(onClick = onClose, enabled = !state.isSaving) {
@@ -162,7 +172,9 @@ fun BoardFormContent(
                 .padding(LayoutConst.SETTINGS_PADDING_DP.dp)
                 .fillMaxSize(),
         ) {
-            OutlinedTextField(
+            // Same filled style as the task name: up to two lines, the count at the bottom right.
+            val placeholder = stringResource(R.string.board_name)
+            BasicTextField(
                 value = fieldValue,
                 onValueChange = { value ->
                     // Cleaned here, not only in the ViewModel: the field keeps its own text, so a 41st character
@@ -177,13 +189,19 @@ fun BoardFormContent(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(focusRequester),
+                    .focusRequester(focusRequester)
+                    .semantics { contentDescription = placeholder },
                 enabled = !state.isSaving,
-                label = { Text(stringResource(R.string.board_name)) },
-                supportingText = {
-                    Text("${TaskTitle.length(state.name.trim())}/${LayoutConst.NAME_MAX_LENGTH}")
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                maxLines = LayoutConst.NAME_FIELD_MAX_LINES,
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                decorationBox = { innerTextField ->
+                    FilledField(
+                        placeholder = placeholder.takeIf { fieldValue.text.isEmpty() },
+                        counter = "${TaskTitle.length(state.name.trim())}/${LayoutConst.NAME_MAX_LENGTH}",
+                        innerTextField = innerTextField,
+                    )
                 },
-                singleLine = true,
             )
             if (state.saveFailed) {
                 Text(

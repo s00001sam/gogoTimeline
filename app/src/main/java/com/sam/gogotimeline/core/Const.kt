@@ -117,10 +117,10 @@ object LayoutConst {
     const val SAVE_DIALOG_MAX_WIDTH_DP = 280f
     const val SAVE_DIALOG_CORNER_DP = 16f
     const val SAVE_DIALOG_PADDING_DP = 20f
-    const val SAVE_DIALOG_CLOSE_ICON_DP = 20f
     const val SAVE_DIALOG_ELEVATION_DP = 6f
     const val CONFIRM_TITLE_MAX_LINES = 2
     const val CONFIRM_MESSAGE_GAP_DP = 8f
+    const val CONFIRM_BUTTONS_GAP_DP = 16f
 
     // Task sheet
     const val SHEET_PADDING_DP = 16f
@@ -210,6 +210,13 @@ object LayoutConst {
     const val TODAY_BOX_BORDER_DP = 1.5f
     const val TODAY_BOX_CORNER_DP = 4f
     const val TODAY_BOX_TEXT_DP = 11f
+
+    // Top-right buttons (today, unit, ⋮): how far each one's circular ripple reaches past its content, and the gap
+    // between them; both larger on tablets.
+    const val TOP_BAR_ACTION_REACH_PHONE_DP = 8f
+    const val TOP_BAR_ACTION_REACH_TABLET_DP = 12f
+    const val TOP_BAR_ACTION_GAP_PHONE_DP = 4f
+    const val TOP_BAR_ACTION_GAP_TABLET_DP = 8f
 
     // The whole top-left corner toggles the left pane, so the visible arrow can stay small.
     const val CORNER_ICON_SIZE_DP = 24f

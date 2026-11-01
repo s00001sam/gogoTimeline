@@ -47,7 +47,7 @@
     <string name="more_options">More options</string>
     <string name="back">Back</string>
     <string name="snap_interval_title">Snap interval (%1$s)</string>
-    <string name="width">Width</string>
+    <string name="time_scale">Time scale</string>
     <string name="multiplier_value">%1$.1fx</string>
     <string name="row_height">Row height</string>
     <string name="sample_task">Design review</string>

@@ -426,9 +426,12 @@ private fun NotesField(
     )
 }
 
-/** The borderless filled box shared by the name and notes fields, with the character count at the bottom right. */
+/**
+ * The borderless filled box shared by the task name, notes and board name fields, with the character count at the
+ * bottom right.
+ */
 @Composable
-private fun FilledField(
+internal fun FilledField(
     placeholder: String?,
     counter: String,
     innerTextField: @Composable () -> Unit,
@@ -562,7 +565,7 @@ private fun Chip(
 }
 
 /**
- * The seven task colors in one row; the selected one gets an outer ring with a gap. Scrolls sideways on narrow
+ * The seven task colors in one row; the selected one gets an outer ring in its own color, with a gap. Scrolls sideways on narrow
  * screens instead of shrinking the touch targets (spec 7.2).
  */
 @Composable
@@ -572,7 +575,6 @@ private fun ColorPicker(
     onSelect: (Int) -> Unit,
 ) {
     val taskColors = GogoTimelineTheme.extendedColors.taskColors
-    val ringColor = MaterialTheme.colorScheme.onSurface
     // Centered when the row fits; scrolls when it does not.
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Row(
@@ -585,8 +587,11 @@ private fun ColorPicker(
                 Box(
                     modifier = Modifier
                         .size(LayoutConst.COLOR_TOUCH_DP.dp)
+                        // No ripple: the ring moving to the tapped color is the feedback.
                         .selectable(
                             selected = index == selected,
+                            interactionSource = null,
+                            indication = null,
                             enabled = enabled,
                             role = Role.RadioButton,
                             onClick = { onSelect(index) },
@@ -600,7 +605,7 @@ private fun ColorPicker(
                             .size((LayoutConst.COLOR_DOT_DP + 2 * ring).dp)
                             .then(
                                 if (index == selected) {
-                                    Modifier.border(LayoutConst.COLOR_RING_WIDTH_DP.dp, ringColor, CircleShape)
+                                    Modifier.border(LayoutConst.COLOR_RING_WIDTH_DP.dp, color, CircleShape)
                                 } else {
                                     Modifier
                                 },

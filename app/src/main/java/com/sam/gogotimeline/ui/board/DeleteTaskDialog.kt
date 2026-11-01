@@ -39,8 +39,6 @@ private fun DeleteTaskContent(
         title = stringResource(R.string.delete_task_title, taskName),
         message = stringResource(R.string.delete_task_message),
         error = if (deleteFailed) stringResource(R.string.delete_failed) else null,
-        isBusy = isDeleting,
-        onCancel = onCancel,
     ) {
         SecondaryDialogButton(text = stringResource(R.string.cancel), enabled = !isDeleting, onClick = onCancel)
         PrimaryDialogButton(

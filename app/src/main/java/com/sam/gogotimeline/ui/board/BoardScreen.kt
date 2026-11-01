@@ -8,10 +8,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.isImeVisible
@@ -33,7 +35,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
@@ -52,6 +53,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -59,11 +61,13 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -463,27 +467,37 @@ fun BoardContent(
                 },
                 actions = {
                     if (interactive) {
-                        TodayButton(dayOfMonth = todayDayOfMonth, onClick = onGoToToday)
-                        TextButton(
-                            onClick = {
-                                scope.launch {
-                                    val target = ZoomRules.unitButtonTarget(
-                                        state.unit,
-                                        state.dpPerUnit,
-                                        state.widthMultiplier,
-                                    )
-                                    state.animateZoomTo(target)
-                                    onZoomChange(target)
-                                }
-                            },
+                        // No IconButton / TextButton: their 48dp boxes spread the three apart. Each draws its own
+                        // circular ripple a little beyond its content, with a fixed gap between them.
+                        val gap = topBarActionGap()
+                        Row(
+                            modifier = Modifier.padding(end = gap),
+                            horizontalArrangement = Arrangement.spacedBy(gap),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(stringResource(state.unit.labelRes()))
+                            TodayButton(dayOfMonth = todayDayOfMonth, onClick = onGoToToday)
+                            Text(
+                                text = stringResource(state.unit.labelRes()),
+                                modifier = Modifier.topBarAction {
+                                    scope.launch {
+                                        val target = ZoomRules.unitButtonTarget(
+                                            state.unit,
+                                            state.dpPerUnit,
+                                            state.widthMultiplier,
+                                        )
+                                        state.animateZoomTo(target)
+                                        onZoomChange(target)
+                                    }
+                                },
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            OverflowMenu(
+                                onSettingsClick = onSettingsClick,
+                                onRenameClick = onRenameBoard,
+                                onDeleteClick = onDeleteBoard,
+                            )
                         }
-                        OverflowMenu(
-                            onSettingsClick = onSettingsClick,
-                            onRenameClick = onRenameBoard,
-                            onDeleteClick = onDeleteBoard,
-                        )
                     }
                 },
             )
@@ -637,9 +651,14 @@ private fun TodayButton(
     val description = stringResource(R.string.go_to_today)
     val color = MaterialTheme.colorScheme.onSurface
     val textSize = with(LocalDensity.current) { LayoutConst.TODAY_BOX_TEXT_DP.dp.toSp() }
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.semantics { contentDescription = description },
+    Box(
+        modifier = Modifier
+            .topBarAction(onClick)
+            .clearAndSetSemantics {
+                contentDescription = description
+                role = Role.Button
+            },
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
@@ -648,8 +667,7 @@ private fun TodayButton(
                     LayoutConst.TODAY_BOX_BORDER_DP.dp,
                     color,
                     RoundedCornerShape(LayoutConst.TODAY_BOX_CORNER_DP.dp),
-                )
-                .clearAndSetSemantics {},
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -659,6 +677,24 @@ private fun TodayButton(
             )
         }
     }
+}
+
+/** The gap between the top-right buttons; larger on tablets. */
+@Composable
+private fun topBarActionGap(): Dp =
+    (if (isTabletLayout()) LayoutConst.TOP_BAR_ACTION_GAP_TABLET_DP else LayoutConst.TOP_BAR_ACTION_GAP_PHONE_DP).dp
+
+/** A top-right button: tappable a little beyond its content (more on tablets), with a circular ripple there. */
+@Composable
+private fun Modifier.topBarAction(onClick: () -> Unit): Modifier {
+    val reach = if (isTabletLayout()) {
+        LayoutConst.TOP_BAR_ACTION_REACH_TABLET_DP
+    } else {
+        LayoutConst.TOP_BAR_ACTION_REACH_PHONE_DP
+    }
+    return clip(CircleShape)
+        .clickable(role = Role.Button, onClick = onClick)
+        .padding(reach.dp)
 }
 
 /**
@@ -672,12 +708,11 @@ private fun OverflowMenu(
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                painter = painterResource(R.drawable.ic_more_vert),
-                contentDescription = stringResource(R.string.more_options),
-            )
-        }
+        Icon(
+            painter = painterResource(R.drawable.ic_more_vert),
+            contentDescription = stringResource(R.string.more_options),
+            modifier = Modifier.topBarAction { expanded = true },
+        )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.settings)) },

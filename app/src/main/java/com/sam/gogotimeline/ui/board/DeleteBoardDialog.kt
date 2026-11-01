@@ -31,8 +31,6 @@ private fun DeleteBoardContent(
         title = stringResource(R.string.delete_board_title, state.board.name),
         message = stringResource(R.string.delete_board_message),
         error = if (state.deleteFailed) stringResource(R.string.delete_board_failed) else null,
-        isBusy = state.isDeleting,
-        onCancel = onCancel,
     ) {
         SecondaryDialogButton(
             text = stringResource(R.string.cancel),

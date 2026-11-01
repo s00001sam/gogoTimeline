@@ -23,7 +23,6 @@ internal fun SaveChangesDialog(
             saveFailed = saveFailed,
             onSave = onSave,
             onDiscard = onDiscard,
-            onCancel = onCancel,
         )
     }
 }
@@ -35,14 +34,11 @@ private fun SaveChangesContent(
     saveFailed: Boolean,
     onSave: () -> Unit,
     onDiscard: () -> Unit,
-    onCancel: () -> Unit,
 ) {
     ConfirmDialogContent(
         title = stringResource(R.string.save_changes_title),
         message = null,
         error = if (saveFailed) stringResource(R.string.save_failed) else null,
-        isBusy = isSaving,
-        onCancel = onCancel,
     ) {
         SecondaryDialogButton(text = stringResource(R.string.discard), enabled = !isSaving, onClick = onDiscard)
         PrimaryDialogButton(
@@ -65,7 +61,6 @@ private fun SaveChangesDialogPreview() {
             saveFailed = false,
             onSave = {},
             onDiscard = {},
-            onCancel = {},
         )
     }
 }
@@ -80,7 +75,6 @@ private fun SaveChangesDialogSavingPreview() {
             saveFailed = false,
             onSave = {},
             onDiscard = {},
-            onCancel = {},
         )
     }
 }
@@ -95,7 +89,6 @@ private fun SaveChangesDialogFailedPreview() {
             saveFailed = true,
             onSave = {},
             onDiscard = {},
-            onCancel = {},
         )
     }
 }
