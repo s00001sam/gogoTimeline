@@ -5,6 +5,7 @@ import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.data.datasource.SettingsLocalDataSource
 import com.sam.gogotimeline.data.local.toEntity
+import com.sam.gogotimeline.data.model.TaskSortMode
 import com.sam.gogotimeline.data.model.TimelineSettings
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -89,6 +90,7 @@ class SettingsRepositoryImplTest {
             widthMultiplier = 2f,
             drawerExpanded = false,
             lockConfirmed = true,
+            taskSortMode = TaskSortMode.START_TIME,
         ).toEntity()
         coEvery { settings.insert(any()) } answers { assertTrue(transaction.active) }
         repository.resetToDefaults()
@@ -97,6 +99,7 @@ class SettingsRepositoryImplTest {
             leftPaneExpanded = true,
             drawerExpanded = false,
             lockConfirmed = true,
+            taskSortMode = TaskSortMode.START_TIME,
         )
         coVerify { settings.insert(expected.toEntity()) }
     }
@@ -112,6 +115,13 @@ class SettingsRepositoryImplTest {
         repository.markLockConfirmed()
         coVerify(exactly = 1) { settings.markLockConfirmed() }
         assertFalse(TimelineSettings.DEFAULT.lockConfirmed)
+    }
+
+    @Test
+    fun sortModeIsSavedOnItsOwnAndStartsManual() = runTest {
+        repository.setTaskSortMode(TaskSortMode.DURATION)
+        coVerify(exactly = 1) { settings.updateTaskSortMode(TaskSortMode.DURATION) }
+        assertEquals(TaskSortMode.MANUAL, TimelineSettings.DEFAULT.taskSortMode)
     }
 
     @Test

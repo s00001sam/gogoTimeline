@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.sam.gogotimeline.core.time.TimeUnit
+import com.sam.gogotimeline.data.model.TaskSortMode
 import kotlinx.coroutines.flow.Flow
 
 /** Each update touches only its own columns, so two quick changes never overwrite each other. */
@@ -56,4 +57,7 @@ interface SettingsDao {
 
     @Query("UPDATE settings SET lockConfirmed = 1 WHERE id = ${SettingsEntity.ID}")
     suspend fun markLockConfirmed()
+
+    @Query("UPDATE settings SET taskSortMode = :mode WHERE id = ${SettingsEntity.ID}")
+    suspend fun updateTaskSortMode(mode: TaskSortMode)
 }

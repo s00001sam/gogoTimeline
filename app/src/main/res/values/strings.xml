@@ -50,6 +50,10 @@
     <string name="board_locked">Board is locked</string>
     <string name="locked">Locked</string>
     <string name="lock">Lock</string>
+    <string name="sort_by">Sort by</string>
+    <string name="sort_manual">Manual order</string>
+    <string name="sort_start_time">Start time</string>
+    <string name="sort_duration">Duration</string>
     <string name="lock_board_title">Lock “%1$s”?</string>
     <string name="lock_board_message">Tasks can’t be added or edited until you unlock it.</string>
     <string name="back">Back</string>

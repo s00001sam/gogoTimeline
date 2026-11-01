@@ -2,6 +2,7 @@ package com.sam.gogotimeline.data.datasource
 
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.data.local.SettingsEntity
+import com.sam.gogotimeline.data.model.TaskSortMode
 import kotlinx.coroutines.flow.Flow
 
 interface SettingsLocalDataSource {
@@ -33,4 +34,6 @@ interface SettingsLocalDataSource {
     suspend fun updateDrawerExpanded(expanded: Boolean)
 
     suspend fun markLockConfirmed()
+
+    suspend fun updateTaskSortMode(mode: TaskSortMode)
 }

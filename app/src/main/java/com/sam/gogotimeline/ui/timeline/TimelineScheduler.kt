@@ -100,6 +100,8 @@ fun TimelineScheduler(
     // False for a locked board: a long press reports onLockedLongPress instead of lifting the row, and the selected
     // (viewed) row shows only its outline: no handles, no dimmed rows, no snap hint, no dragging.
     editable: Boolean = true,
+    // False unless rows follow the manual order: a long press lifts nothing.
+    reorderable: Boolean = true,
 ) {
     LaunchedEffect(calendar) { state.calendar = calendar }
     LaunchedEffect(widthMultiplier) { state.widthMultiplier = widthMultiplier }
@@ -144,6 +146,7 @@ fun TimelineScheduler(
         labelWidth = { textMeasurer.measure(it, styles.barText).size.width.toFloat() },
         haptic = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
         editable = editable,
+        reorderable = reorderable,
     )
     SideEffect { interaction.clearReleasedIfApplied() }
     val gestureHandler = rememberUpdatedState<TimelineGestureHandler>(interaction)

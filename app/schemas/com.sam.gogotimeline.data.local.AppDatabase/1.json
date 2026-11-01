@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "460f102a58826704eec22ecfee04c6cb",
+    "identityHash": "f50a07c7fe8895beed761b4d2753b003",
     "entities": [
       {
         "tableName": "boards",
@@ -150,7 +150,7 @@
       },
       {
         "tableName": "settings",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `unit` TEXT NOT NULL, `dpPerUnit` REAL NOT NULL, `widthMultiplier` REAL NOT NULL, `snapHourMinutes` INTEGER NOT NULL, `snapDayMinutes` INTEGER NOT NULL, `snapWeekMinutes` INTEGER NOT NULL, `snapMonthMinutes` INTEGER NOT NULL, `rowHeightDp` REAL NOT NULL, `leftPaneExpanded` INTEGER NOT NULL, `drawerExpanded` INTEGER NOT NULL, `lockConfirmed` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `unit` TEXT NOT NULL, `dpPerUnit` REAL NOT NULL, `widthMultiplier` REAL NOT NULL, `snapHourMinutes` INTEGER NOT NULL, `snapDayMinutes` INTEGER NOT NULL, `snapWeekMinutes` INTEGER NOT NULL, `snapMonthMinutes` INTEGER NOT NULL, `rowHeightDp` REAL NOT NULL, `leftPaneExpanded` INTEGER NOT NULL, `drawerExpanded` INTEGER NOT NULL, `lockConfirmed` INTEGER NOT NULL, `taskSortMode` TEXT NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -223,6 +223,12 @@
             "columnName": "lockConfirmed",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "taskSortMode",
+            "columnName": "taskSortMode",
+            "affinity": "TEXT",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -235,7 +241,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '460f102a58826704eec22ecfee04c6cb')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f50a07c7fe8895beed761b4d2753b003')"
     ]
   }
 }

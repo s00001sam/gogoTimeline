@@ -71,4 +71,5 @@ private fun SettingsEntity.toValues() = ContentValues().apply {
     put("leftPaneExpanded", if (leftPaneExpanded) 1 else 0)
     put("drawerExpanded", if (drawerExpanded) 1 else 0)
     put("lockConfirmed", if (lockConfirmed) 1 else 0)
+    put("taskSortMode", Converters().fromTaskSortMode(taskSortMode))
 }

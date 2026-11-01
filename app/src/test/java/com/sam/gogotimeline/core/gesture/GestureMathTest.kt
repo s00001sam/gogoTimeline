@@ -284,6 +284,27 @@ class GestureMathTest {
         assertEquals(9_999 * ROW + 2 * ROW + 10f, GestureMath.rowAboveSheetScrollY(9_999, ROW, -10f, ROW))
     }
 
+    @Test
+    fun aRowAlreadyInViewKeepsTheScroll() {
+        // Rows 2–6 fit in 320px from scroll 128; row 4 is in the middle.
+        assertEquals(128f, GestureMath.scrollYToReveal(4, ROW, scrollY = 128f, viewportHeightPx = 320f))
+    }
+
+    @Test
+    fun aRowAboveOrBelowMovesToTheNearerEdge() {
+        assertEquals(64f, GestureMath.scrollYToReveal(1, ROW, scrollY = 128f, viewportHeightPx = 320f))
+        // Row 9 ends at 640; the body then shows 320..640.
+        assertEquals(320f, GestureMath.scrollYToReveal(9, ROW, scrollY = 128f, viewportHeightPx = 320f))
+    }
+
+    @Test
+    fun aRowTouchingAnEdgeOrTallerThanTheBodyStillGetsItsTop() {
+        // Row 6 ends exactly at the bottom edge (128 + 320 = 448), so nothing moves.
+        assertEquals(128f, GestureMath.scrollYToReveal(6, ROW, scrollY = 128f, viewportHeightPx = 320f))
+        // A row taller than the body (huge row height) shows from its top when scrolled up to.
+        assertEquals(0f, GestureMath.scrollYToReveal(0, ROW, scrollY = 10f, viewportHeightPx = 40f))
+    }
+
     private companion object {
         const val SLOP = 8f
         const val ROW = 64f

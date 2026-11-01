@@ -9,6 +9,7 @@ import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.core.time.at
 import com.sam.gogotimeline.data.model.Task
+import com.sam.gogotimeline.data.model.TaskSortMode
 import com.sam.gogotimeline.data.model.TimelineSettings
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -52,6 +53,15 @@ class EntityMappersTest {
     }
 
     @Test
+    fun sortModeIsStoredByNameAndAnUnknownNameIsManual() {
+        val converters = Converters()
+        assertEquals("START_TIME", converters.fromTaskSortMode(TaskSortMode.START_TIME))
+        assertEquals(TaskSortMode.DURATION, converters.toTaskSortMode("DURATION"))
+        assertEquals(TaskSortMode.MANUAL, converters.toTaskSortMode("BY_COLOR"))
+        assertEquals(TaskSortMode.MANUAL, converters.toTaskSortMode(""))
+    }
+
+    @Test
     fun settingsSurviveARoundTrip() {
         val settings = TimelineSettings(
             zoom = ZoomLevel(TimeUnit.WEEK, 90f),
@@ -66,6 +76,7 @@ class EntityMappersTest {
             leftPaneExpanded = true,
             drawerExpanded = false,
             lockConfirmed = true,
+            taskSortMode = TaskSortMode.DURATION,
         )
         assertEquals(settings, settings.toEntity().toDomain())
     }

@@ -3,6 +3,7 @@ package com.sam.gogotimeline.data.repository
 import com.sam.gogotimeline.core.time.SnapInterval
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
+import com.sam.gogotimeline.data.model.TaskSortMode
 import com.sam.gogotimeline.data.model.TimelineSettings
 import kotlinx.coroutines.flow.Flow
 
@@ -29,9 +30,12 @@ interface SettingsRepository {
     /** Lock was accepted in the first-lock confirmation; it is never asked again. */
     suspend fun markLockConfirmed()
 
+    suspend fun setTaskSortMode(mode: TaskSortMode)
+
     /**
      * Resets the settings page's values: multiplier, row height and all four snap intervals. The current unit, the
-     * left pane, the tablet drawer and the first-lock confirmation stay; the width scales back with the multiplier.
+     * left pane, the tablet drawer, the first-lock confirmation and the sort order stay; the width scales back with
+     * the multiplier.
      */
     suspend fun resetToDefaults()
 }

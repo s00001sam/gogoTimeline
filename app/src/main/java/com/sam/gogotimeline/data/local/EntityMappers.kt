@@ -79,6 +79,7 @@ fun SettingsEntity.toDomain(): TimelineSettings = TimelineSettings(
     leftPaneExpanded = leftPaneExpanded,
     drawerExpanded = drawerExpanded,
     lockConfirmed = lockConfirmed,
+    taskSortMode = taskSortMode,
 )
 
 fun TimelineSettings.toEntity(): SettingsEntity = SettingsEntity(
@@ -93,6 +94,7 @@ fun TimelineSettings.toEntity(): SettingsEntity = SettingsEntity(
     leftPaneExpanded = leftPaneExpanded,
     drawerExpanded = drawerExpanded,
     lockConfirmed = lockConfirmed,
+    taskSortMode = taskSortMode,
 )
 
 private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()

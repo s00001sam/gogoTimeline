@@ -143,6 +143,25 @@ object GestureMath {
         gapPx: Float,
     ): Float = (rowIndex + 1) * rowHeightPx + gapPx - sheetTopPx
 
+    /**
+     * The smallest scroll change that shows row [rowIndex] whole in a body [viewportHeightPx] tall: [scrollY] itself
+     * when it already is, else the row at the nearer edge. The caller clamps it to the limits.
+     */
+    fun scrollYToReveal(
+        rowIndex: Int,
+        rowHeightPx: Float,
+        scrollY: Float,
+        viewportHeightPx: Float,
+    ): Float {
+        val top = rowIndex * rowHeightPx
+        val bottom = top + rowHeightPx
+        return when {
+            top < scrollY -> top
+            bottom > scrollY + viewportHeightPx -> bottom - viewportHeightPx
+            else -> scrollY
+        }
+    }
+
     /** Visible rows plus [buffer] rows above and below. */
     fun visibleRowRange(
         scrollY: Float,

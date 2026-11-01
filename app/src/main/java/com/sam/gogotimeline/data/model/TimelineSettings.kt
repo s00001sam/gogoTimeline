@@ -17,6 +17,8 @@ data class TimelineSettings(
     val drawerExpanded: Boolean,
     /** Lock was accepted once in the first-lock confirmation, so locking does not ask again (spec 9). */
     val lockConfirmed: Boolean,
+    /** Row order, shared by all boards; each board keeps its own manual order (spec 9). */
+    val taskSortMode: TaskSortMode,
 ) {
     fun snapFor(unit: TimeUnit): SnapInterval = snapIntervals[unit] ?: SnapInterval.default(unit)
 
@@ -29,6 +31,7 @@ data class TimelineSettings(
             leftPaneExpanded = false,
             drawerExpanded = true,
             lockConfirmed = false,
+            taskSortMode = TaskSortMode.MANUAL,
         )
     }
 }

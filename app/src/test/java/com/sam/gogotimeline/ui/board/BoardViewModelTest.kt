@@ -11,6 +11,7 @@ import com.sam.gogotimeline.core.time.at
 import com.sam.gogotimeline.data.model.Board
 import com.sam.gogotimeline.data.model.Task
 import com.sam.gogotimeline.data.model.TaskEdit
+import com.sam.gogotimeline.data.model.TaskSortMode
 import com.sam.gogotimeline.data.model.TimelineSettings
 import com.sam.gogotimeline.data.repository.BoardRepository
 import com.sam.gogotimeline.data.repository.SettingsRepository
@@ -382,6 +383,104 @@ class BoardViewModelTest {
         assertEquals(1, opened.size)
     }
 
+    private val early = TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T06:00"), TAIPEI.at("2026-10-31T07:00")))
+
+    private fun sortBy(mode: TaskSortMode) {
+        settings.tryEmit(TimelineSettings.DEFAULT.copy(taskSortMode = mode))
+    }
+
+    @Test
+    fun startTimeOrderShowsEarliestFirstAndTiesKeepTheManualOrder() {
+        tasks.value = listOf(a, b, c.copy(schedule = early))
+        sortBy(TaskSortMode.START_TIME)
+        assertEquals(listOf(C, A, B), viewModel().ready.tasks.map { it.id })
+    }
+
+    @Test
+    fun sortedBoardMovesNoRowEvenWhileEditing() {
+        sortBy(TaskSortMode.DURATION)
+        val viewModel = viewModel()
+        viewModel.onTaskMove(A, 2)
+        viewModel.onTaskTap(B)
+        viewModel.onTaskMove(B, 0)
+        assertEquals(1, viewModel.ready.edit!!.draftRow)
+        coVerify(exactly = 0) { taskRepository.moveTask(any(), any(), any()) }
+    }
+
+    @Test
+    fun sortChangeIsSavedForAllBoardsAndTheCurrentOneDoesNothing() {
+        val viewModel = viewModel()
+        viewModel.onTaskSortModeChange(TaskSortMode.MANUAL)
+        coVerify(exactly = 0) { settingsRepository.setTaskSortMode(any()) }
+        viewModel.onTaskSortModeChange(TaskSortMode.DURATION)
+        coVerify(exactly = 1) { settingsRepository.setTaskSortMode(TaskSortMode.DURATION) }
+    }
+
+    @Test
+    fun sortChangeWithUnsavedChangesAsksFirstAndCancelKeepsTheOrder() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onTaskSortModeChange(TaskSortMode.START_TIME)
+        assertTrue(viewModel.ready.editStatus.confirmingClose)
+        viewModel.onCancelDialog()
+        viewModel.onEmptyTap()
+        viewModel.onDiscard()
+        coVerify(exactly = 0) { settingsRepository.setTaskSortMode(any()) }
+
+        viewModel.editBWithLaterTime()
+        viewModel.onTaskSortModeChange(TaskSortMode.START_TIME)
+        viewModel.onDiscard()
+        coVerify(exactly = 1) { settingsRepository.setTaskSortMode(TaskSortMode.START_TIME) }
+    }
+
+    @Test
+    fun savingOnASortedBoardEndsOnceTheNewOrderArrivesThenRevealsTheTask() = runTest {
+        sortBy(TaskSortMode.START_TIME)
+        coEvery { taskRepository.saveTask(any(), any()) } returns Unit
+        val viewModel = viewModel()
+        val reveals = mutableListOf<Long>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.reveals.toList(reveals) }
+        viewModel.editBWithLaterTime()
+        viewModel.onConfirm(TAIPEI)
+        // The database still has the old times: the edited row stays where it was.
+        assertTrue(viewModel.ready.editStatus.isSaving)
+        assertTrue(reveals.isEmpty())
+        tasks.value = listOf(a, b.copy(schedule = later), c)
+        assertNull(viewModel.ready.edit)
+        assertEquals(listOf(A, C, B), viewModel.ready.tasks.map { it.id })
+        assertEquals(listOf(B), reveals)
+    }
+
+    @Test
+    fun newTaskOnASortedBoardGoesAtTheEndOfTheManualOrderAndIsRevealed() = runTest {
+        sortBy(TaskSortMode.START_TIME)
+        coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } coAnswers {
+            tasks.value += task(D, 3).copy(title = "Early", schedule = early)
+            D
+        }
+        val viewModel = viewModel()
+        val reveals = mutableListOf<Long>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.reveals.toList(reveals) }
+        viewModel.onNewTask(early)
+        viewModel.onTitleChange("Early")
+        viewModel.onConfirm(TAIPEI)
+        coVerify { taskRepository.createTask(BOARD, "Early", early, any(), "", 3) }
+        assertNull(viewModel.ready.edit)
+        assertEquals(D, viewModel.ready.tasks.first().id)
+        assertEquals(listOf(D), reveals)
+    }
+
+    @Test
+    fun manualSaveRevealsNothing() = runTest {
+        val viewModel = viewModel()
+        val reveals = mutableListOf<Long>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.reveals.toList(reveals) }
+        viewModel.editBWithLaterTime()
+        viewModel.onConfirm(TAIPEI)
+        assertNull(viewModel.ready.edit)
+        assertTrue(reveals.isEmpty())
+    }
+
     @Test
     fun lockedBoardStartsNoEditingNewTaskOrReorder() {
         board.value = board.value!!.copy(locked = true)
@@ -659,7 +758,9 @@ class BoardViewModelTest {
 
     @Test
     fun editedTaskReordersInTheDraftAndSavesWithItsContent() {
-        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { tasks.value = listOf(b, a, c) }
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers {
+            tasks.value = listOf(b.copy(sortOrder = 0), a.copy(sortOrder = 1), c)
+        }
         val viewModel = viewModel()
         viewModel.onTaskTap(B)
         viewModel.onTaskMove(B, 0)

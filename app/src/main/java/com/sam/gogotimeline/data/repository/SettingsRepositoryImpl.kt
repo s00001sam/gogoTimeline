@@ -8,6 +8,7 @@ import com.sam.gogotimeline.data.datasource.SettingsLocalDataSource
 import com.sam.gogotimeline.data.datasource.TransactionRunner
 import com.sam.gogotimeline.data.local.toDomain
 import com.sam.gogotimeline.data.local.toEntity
+import com.sam.gogotimeline.data.model.TaskSortMode
 import com.sam.gogotimeline.data.model.TimelineSettings
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
@@ -42,6 +43,8 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun markLockConfirmed() = settingsDataSource.markLockConfirmed()
 
+    override suspend fun setTaskSortMode(mode: TaskSortMode) = settingsDataSource.updateTaskSortMode(mode)
+
     override suspend fun resetToDefaults() = transaction.run {
         val current = current()
         val defaults = TimelineSettings.DEFAULT
@@ -52,6 +55,7 @@ class SettingsRepositoryImpl @Inject constructor(
                 leftPaneExpanded = current.leftPaneExpanded,
                 drawerExpanded = current.drawerExpanded,
                 lockConfirmed = current.lockConfirmed,
+                taskSortMode = current.taskSortMode,
             ).toEntity(),
         )
     }

@@ -3,6 +3,7 @@ package com.sam.gogotimeline.data.local
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.sam.gogotimeline.core.time.TimeUnit
+import com.sam.gogotimeline.data.model.TaskSortMode
 
 /** The single settings row; one typed column per value so one query reads everything. */
 @Entity(tableName = "settings")
@@ -19,6 +20,7 @@ data class SettingsEntity(
     val leftPaneExpanded: Boolean,
     val drawerExpanded: Boolean,
     val lockConfirmed: Boolean,
+    val taskSortMode: TaskSortMode,
 ) {
     companion object {
         const val ID = 0

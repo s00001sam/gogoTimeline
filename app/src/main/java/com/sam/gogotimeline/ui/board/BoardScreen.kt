@@ -42,6 +42,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +70,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -84,6 +86,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -105,6 +109,7 @@ import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.TimeUnit
 import com.sam.gogotimeline.core.time.ZoomLevel
 import com.sam.gogotimeline.core.time.ZoomRules
+import com.sam.gogotimeline.data.model.TaskSortMode
 import com.sam.gogotimeline.data.model.TimelineSettings
 import com.sam.gogotimeline.ui.EditorLayout
 import com.sam.gogotimeline.ui.editorLayout
@@ -166,6 +171,14 @@ fun BoardScreen(
     val draftRow = ready?.edit?.draftRow
     val tasks = remember(ready?.tasks, draft, draftRow, calendar) {
         tasksWithDraft(ready?.tasks.orEmpty(), draft, draftRow).map { it.toTimelineTask(calendar) }
+    }
+    // A task saved on a sorted board may move to another row; the view follows it so it stays in sight.
+    val currentTasks by rememberUpdatedState(tasks)
+    LaunchedEffect(viewModel) {
+        viewModel.reveals.collect { taskId ->
+            val row = snapshotFlow { currentTasks.indexOfFirst { it.id == taskId } }.first { it >= 0 }
+            state.animateRowIntoView(row)
+        }
     }
     val now = rememberNow()
     val todayDayOfMonth by remember(calendar) { derivedStateOf { calendar.localDate(now.value).dayOfMonth } }
@@ -252,6 +265,7 @@ fun BoardScreen(
         boardName = ready?.board?.name.orEmpty(),
         locked = ready?.board?.locked == true,
         onToggleLock = viewModel::onToggleLock,
+        onSortModeChange = viewModel::onTaskSortModeChange,
         state = state,
         calendar = calendar,
         tasks = tasks,
@@ -355,6 +369,7 @@ fun BoardContent(
     onGoToToday: () -> Unit,
     locked: Boolean = false,
     onToggleLock: () -> Unit = {},
+    onSortModeChange: (TaskSortMode) -> Unit = {},
     onZoomChange: (ZoomLevel) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onRenameBoard: () -> Unit = {},
@@ -716,6 +731,8 @@ fun BoardContent(
                                     onSettingsClick = onSettingsClick,
                                     onRenameClick = onRenameBoard,
                                     onDeleteClick = onDeleteBoard,
+                                    sortMode = settings.taskSortMode,
+                                    onSortModeChange = onSortModeChange,
                                 )
                             }
                         }
@@ -750,6 +767,7 @@ fun BoardContent(
                         onNewTask = onNewTask,
                         showEmptyState = interactive && !locked,
                         editable = !locked,
+                        reorderable = settings.taskSortMode == TaskSortMode.MANUAL,
                     )
                     if (interactionBlocked) {
                         // The drawer scrim may not consume the first down event while its opening animation starts.
@@ -1036,13 +1054,16 @@ private fun LockIcon(
 }
 
 /**
- * The ⋮ menu at the far right holds Settings and the board's less frequent Rename and Delete actions.
+ * The ⋮ menu at the far right holds Settings, the board's less frequent Rename and Delete actions, and Sort by, with the
+ * current order checked (spec 9).
  */
 @Composable
 private fun OverflowMenu(
     onSettingsClick: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    sortMode: TaskSortMode,
+    onSortModeChange: (TaskSortMode) -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Box {
@@ -1076,8 +1097,44 @@ private fun OverflowMenu(
                 },
                 leadingIcon = { Icon(painterResource(R.drawable.ic_delete), contentDescription = null) },
             )
+            HorizontalDivider()
+            Text(
+                text = stringResource(R.string.sort_by),
+                modifier = Modifier.padding(
+                    horizontal = LayoutConst.MENU_SECTION_PADDING_HORIZONTAL_DP.dp,
+                    vertical = LayoutConst.MENU_SECTION_PADDING_VERTICAL_DP.dp,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            TaskSortMode.entries.forEach { mode ->
+                val current = mode == sortMode
+                DropdownMenuItem(
+                    text = { Text(stringResource(mode.labelRes())) },
+                    onClick = {
+                        expanded = false
+                        onSortModeChange(mode)
+                    },
+                    modifier = Modifier.semantics { selected = current },
+                    // A check marks the current order; the others keep the same indent.
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_check),
+                            contentDescription = null,
+                            modifier = Modifier.alpha(if (current) 1f else 0f),
+                        )
+                    },
+                )
+            }
         }
     }
+}
+
+@StringRes
+private fun TaskSortMode.labelRes(): Int = when (this) {
+    TaskSortMode.MANUAL -> R.string.sort_manual
+    TaskSortMode.START_TIME -> R.string.sort_start_time
+    TaskSortMode.DURATION -> R.string.sort_duration
 }
 
 @StringRes

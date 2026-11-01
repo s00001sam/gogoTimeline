@@ -222,6 +222,10 @@ object LayoutConst {
     const val TOP_BAR_ACTION_GAP_PHONE_DP = 4f
     const val TOP_BAR_ACTION_GAP_TABLET_DP = 8f
 
+    // Section heading in the ⋮ menu (Sort by), lined up with the menu items' text.
+    const val MENU_SECTION_PADDING_HORIZONTAL_DP = 12f
+    const val MENU_SECTION_PADDING_VERTICAL_DP = 8f
+
     // Lock beside the board name; its touch area reaches as far as the top-right buttons'.
     const val LOCK_ICON_SIZE_DP = 20f
     const val LOCK_ICON_GAP_DP = 4f

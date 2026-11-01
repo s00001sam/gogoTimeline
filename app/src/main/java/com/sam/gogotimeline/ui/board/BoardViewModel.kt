@@ -9,11 +9,15 @@ import com.sam.gogotimeline.core.text.TaskTitle
 import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TaskSchedule
 import com.sam.gogotimeline.core.time.ZoomLevel
+import com.sam.gogotimeline.data.model.Task
 import com.sam.gogotimeline.data.model.TaskEdit
+import com.sam.gogotimeline.data.model.TaskSortMode
 import com.sam.gogotimeline.data.repository.BoardRepository
 import com.sam.gogotimeline.data.repository.SettingsRepository
 import com.sam.gogotimeline.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.DayOfWeek
+import java.time.ZoneId
 import javax.inject.Inject
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
@@ -56,12 +60,16 @@ class BoardViewModel @Inject constructor(
     private val viewingTaskId = MutableStateFlow<Long?>(null)
     private val topRowIndex = MutableStateFlow<Int?>(null)
     private val actionRequests = Channel<BoardAction>(Channel.CONFLATED)
+    private val revealRequests = Channel<Long>(Channel.CONFLATED)
 
     // Runs once editing has ended through Save, Discard or a clean close; Cancel in the dialog drops it.
     private var afterEditing: (() -> Unit)? = null
 
     /** App-level action to perform after this board has safely finished editing. */
     val actions: Flow<BoardAction> = actionRequests.receiveAsFlow()
+
+    /** A task the screen should scroll into view: one just saved on a sorted board, which may have moved. */
+    val reveals: Flow<Long> = revealRequests.receiveAsFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<BoardUiState> = combine(boardId.filterNotNull(), loadRequests) { id, _ -> id }
@@ -113,6 +121,12 @@ class BoardViewModel @Inject constructor(
 
     /** Leaving the board first resolves an unsaved task draft; the app layer performs [action]. */
     fun onAppAction(action: BoardAction) = runAfterEditing { actionRequests.trySend(action) }
+
+    /** Shared by all boards; while editing, the draft is resolved first like leaving the board (spec 9). */
+    fun onTaskSortModeChange(mode: TaskSortMode) {
+        if (mode == ready?.settings?.taskSortMode) return
+        runAfterEditing { write { settingsRepository.setTaskSortMode(mode) } }
+    }
 
     /**
      * Unlocks right away; locks right away once the first-lock confirmation was accepted, otherwise asks it first.
@@ -218,8 +232,16 @@ class BoardViewModel @Inject constructor(
                     notes = TaskNotes.normalize(draft.notes),
                     schedule = schedule ?: draft.schedule,
                 )
-                if (toSave.isNew) createTask(toSave, session.draftRow) else saveTask(toSave, session)
+                val sorted = ready?.settings?.taskSortMode != TaskSortMode.MANUAL
+                val id = if (toSave.isNew) createTask(toSave, session.draftRow) else saveTask(toSave, session)
+                // Editing ends only once the saved task is back in the list where it belongs, so its row never jumps
+                // back for a frame. A sorted board moves it to where its times belong, and the screen follows it.
+                when {
+                    sorted -> awaitTask(id) { it.schedule == toSave.schedule }
+                    toSave.isNew || session.draftRow != session.originalRow -> awaitRow(id, session.draftRow)
+                }
                 endEditing()
+                if (sorted) revealRequests.trySend(id)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -268,8 +290,10 @@ class BoardViewModel @Inject constructor(
         taskId: Long,
         toIndex: Int,
     ) {
-        val board = ready?.board ?: return
-        if (board.locked) return
+        val state = ready ?: return
+        val board = state.board
+        // Only the manual order can be changed by hand (spec 9).
+        if (board.locked || state.settings.taskSortMode != TaskSortMode.MANUAL) return
         val session = edit.value
         when {
             // Not editing: the new order is saved right away.
@@ -332,38 +356,43 @@ class BoardViewModel @Inject constructor(
         if (session.isDirty) editStatus.value = EditStatus(confirmingClose = true) else endEditing()
     }
 
-    /** Adds the task at the draft's row, then waits for it like [saveTask]. */
+    /** Adds the task at the draft's row of the manual order; returns its id. */
     private suspend fun createTask(
         edit: TaskEdit,
         row: Int,
-    ) {
+    ): Long {
         val boardId = ready?.board?.id ?: error("No board")
-        val id = taskRepository.createTask(boardId, edit.title, edit.schedule, edit.colorIndex, edit.notes, row)
-        awaitRow(id, row)
+        return taskRepository.createTask(boardId, edit.title, edit.schedule, edit.colorIndex, edit.notes, row)
     }
 
-    /** Saves the content and, when the row changed, the new row too, in one transaction. */
+    /** Saves the content and, when the row changed, the new row too, in one transaction; returns the task's id. */
     private suspend fun saveTask(
         edit: TaskEdit,
         session: EditSession,
-    ) {
+    ): Long {
         val moved = session.draftRow != session.originalRow
         taskRepository.saveTask(edit, toIndex = if (moved) session.draftRow else null)
-        if (moved) awaitRow(edit.taskId, session.draftRow)
+        return edit.taskId
     }
 
-    // Waits until the database list shows [taskId] at [row], so the row never jumps back for a frame between editing
-    // ending and the saved order arriving.
+    // Waits until the shown list has [taskId] at [row].
     private suspend fun awaitRow(
         taskId: Long,
         row: Int,
-    ) {
-        uiState.first { state ->
-            val tasks = (state as? BoardUiState.Ready)?.tasks ?: return@first false
-            val index = tasks.indexOfFirst { it.id == taskId }
-            // Not there yet: keep waiting. On an empty board the list may still be empty, with no row to clamp to.
-            index >= 0 && index == row.coerceIn(0, tasks.lastIndex)
-        }
+    ) = awaitTasks { tasks ->
+        val index = tasks.indexOfFirst { it.id == taskId }
+        // Not there yet: keep waiting. On an empty board the list may still be empty, with no row to clamp to.
+        index >= 0 && index == row.coerceIn(0, tasks.lastIndex)
+    }
+
+    // Waits until the shown list has task [taskId] matching [saved].
+    private suspend fun awaitTask(
+        taskId: Long,
+        saved: (Task) -> Boolean,
+    ) = awaitTasks { tasks -> tasks.any { it.id == taskId && saved(it) } }
+
+    private suspend fun awaitTasks(matches: (List<Task>) -> Boolean) {
+        uiState.first { state -> (state as? BoardUiState.Ready)?.tasks?.let(matches) == true }
     }
 
     private fun endEditing() {
@@ -392,7 +421,8 @@ class BoardViewModel @Inject constructor(
                 if (board == null) {
                     BoardUiState.Error
                 } else {
-                    BoardUiState.Ready(board, tasks, settings, edit, editStatus, confirmingLock, viewingTaskId)
+                    val shown = tasks.sortedFor(settings.taskSortMode, sortCalendar())
+                    BoardUiState.Ready(board, shown, settings, edit, editStatus, confirmingLock, viewingTaskId)
                 }
             },
         )
@@ -400,6 +430,9 @@ class BoardViewModel @Inject constructor(
         .catch { emit(BoardUiState.Error) }
 
     // Reorder, zoom, pane and lock writes do not surface failures; the screen keeps showing what the database has.
+    // Start times and lengths need only the zone; the week start does not matter for sorting.
+    private fun sortCalendar() = CalendarContext(ZoneId.systemDefault(), DayOfWeek.MONDAY)
+
     private fun write(block: suspend () -> Unit) {
         viewModelScope.launch { ignoreFailure(block) }
     }

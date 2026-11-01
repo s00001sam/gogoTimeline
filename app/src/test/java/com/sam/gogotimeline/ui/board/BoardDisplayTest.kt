@@ -8,6 +8,7 @@ import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.at
 import com.sam.gogotimeline.data.model.Task
 import com.sam.gogotimeline.data.model.TaskEdit
+import com.sam.gogotimeline.data.model.TaskSortMode
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -134,5 +135,48 @@ class BoardDisplayTest {
     fun draftRowPastTheEndStaysLast() {
         val shown = tasksWithDraft(domainTasks, TaskEdit(1, "Task 1", later, colorIndex = 0), draftRow = 99)
         assertEquals(listOf(2L, 3L, 1L), shown.map { it.id })
+    }
+
+    private fun timed(
+        id: Long,
+        order: Int,
+        start: String,
+        end: String,
+    ) = task(id, TaskSchedule.Timed(TimeRange(TAIPEI.at(start), TAIPEI.at(end)))).copy(sortOrder = order)
+
+    // Manual order 1, 2, 3, 4: a long late task, a short early one, a mid one, and an all-day one on Nov 7.
+    private val mixed = listOf(
+        timed(1, 0, "2026-10-31T13:00", "2026-10-31T18:00"),
+        timed(2, 1, "2026-10-31T08:00", "2026-10-31T08:30"),
+        timed(3, 2, "2026-10-31T10:00", "2026-10-31T12:00"),
+        task(4, release).copy(sortOrder = 3),
+    )
+
+    @Test
+    fun sortsByStartTimeAndByDurationAndManualFollowsSortOrder() {
+        assertEquals(listOf(2L, 3L, 1L, 4L), mixed.sortedFor(TaskSortMode.START_TIME, TAIPEI).map { it.id })
+        assertEquals(listOf(2L, 3L, 1L, 4L), mixed.sortedFor(TaskSortMode.DURATION, TAIPEI).map { it.id })
+        assertEquals(listOf(1L, 2L, 3L, 4L), mixed.reversed().sortedFor(TaskSortMode.MANUAL, TAIPEI).map { it.id })
+    }
+
+    @Test
+    fun tiesKeepTheManualOrder() {
+        val same = listOf(
+            timed(5, 2, "2026-10-31T09:00", "2026-10-31T10:00"),
+            timed(6, 0, "2026-10-31T09:00", "2026-10-31T10:00"),
+            timed(7, 1, "2026-10-31T09:00", "2026-10-31T10:00"),
+        )
+        assertEquals(listOf(6L, 7L, 5L), same.sortedFor(TaskSortMode.START_TIME, TAIPEI).map { it.id })
+        assertEquals(listOf(6L, 7L, 5L), same.sortedFor(TaskSortMode.DURATION, TAIPEI).map { it.id })
+    }
+
+    @Test
+    fun allDayTasksStartAtLocalMidnightInTheCurrentZone() {
+        // A Taipei 09:00 task on Nov 7 is Nov 6 20:00 in New York, before New York's Nov 7 00:00.
+        val morning = timed(8, 0, "2026-11-07T09:00", "2026-11-07T10:00")
+        val allDay = task(9, release).copy(sortOrder = 1)
+        assertEquals(listOf(9L, 8L), listOf(morning, allDay).sortedFor(TaskSortMode.START_TIME, TAIPEI).map { it.id })
+        assertEquals(listOf(8L, 9L), listOf(morning, allDay).sortedFor(TaskSortMode.START_TIME, NEW_YORK).map { it.id })
+        assertTrue(emptyList<Task>().sortedFor(TaskSortMode.DURATION, TAIPEI).isEmpty())
     }
 }

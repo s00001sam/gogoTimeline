@@ -222,12 +222,17 @@ class TimelineState(
         sheetTopPx: Float,
         gapPx: Float,
     ) {
-        val to = clampScrollY(GestureMath.rowAboveSheetScrollY(rowIndex, rowHeightPx, sheetTopPx, gapPx))
-        mutatorMutex.mutate {
-            animate(scrollY, to, animationSpec = tween(LayoutConst.ZOOM_ANIMATION_MILLIS)) { value, _ ->
-                scrollY = value
-            }
-        }
+        animateScrollYTo(clampScrollY(GestureMath.rowAboveSheetScrollY(rowIndex, rowHeightPx, sheetTopPx, gapPx)))
+    }
+
+    /** Smoothly scrolls just enough to show row [rowIndex] whole; a row already in view stays put. */
+    suspend fun animateRowIntoView(rowIndex: Int) {
+        val to = clampScrollY(GestureMath.scrollYToReveal(rowIndex, rowHeightPx, scrollY, viewportHeightPx))
+        if (to != scrollY) animateScrollYTo(to)
+    }
+
+    private suspend fun animateScrollYTo(to: Float) = mutatorMutex.mutate {
+        animate(scrollY, to, animationSpec = tween(LayoutConst.ZOOM_ANIMATION_MILLIS)) { value, _ -> scrollY = value }
     }
 
     /** Called on touch-down: cancels a running fling or zoom animation. */

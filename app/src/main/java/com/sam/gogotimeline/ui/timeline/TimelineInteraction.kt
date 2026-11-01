@@ -52,6 +52,7 @@ internal class TimelineInteraction(
     private var tasks: List<TimelineTask> = emptyList()
     private var selectedTaskId: Long? = null
     private var editable = true
+    private var reorderable = true
     private var snap: SnapInterval = SnapInterval.default(state.unit)
     private var sizes = InteractionSizes(0f, 1f, 0f, 0f, 0f, 0f, 0f)
     private var callbacks = TimelineCallbacks()
@@ -89,10 +90,12 @@ internal class TimelineInteraction(
         labelWidth: (String) -> Float,
         haptic: () -> Unit,
         editable: Boolean = true,
+        reorderable: Boolean = true,
     ) {
         this.tasks = tasks
         this.selectedTaskId = selectedTaskId
         this.editable = editable
+        this.reorderable = reorderable
         this.snap = snap
         this.sizes = sizes
         this.callbacks = callbacks
@@ -177,9 +180,15 @@ internal class TimelineInteraction(
     }
 
     // Any task row can be long-pressed to reorder; while editing, only the edited row, whose new place joins the draft.
-    // On a locked board every row can, so the press can say why nothing lifts.
-    override fun canLongPress(target: HitTarget): Boolean =
-        rowTaskId(target)?.let { !editable || selectedTaskId == null || it == selectedTaskId } == true
+    // On a locked board every row can, so the press can say why nothing lifts. A sorted board lifts nothing.
+    override fun canLongPress(target: HitTarget): Boolean {
+        val taskId = rowTaskId(target) ?: return false
+        return when {
+            !editable -> true
+            !reorderable -> false
+            else -> selectedTaskId == null || taskId == selectedTaskId
+        }
+    }
 
     override fun canMoveTime(target: HitTarget): Boolean =
         editable && target is HitTarget.BarBody && target.taskId == selectedTaskId
@@ -235,7 +244,7 @@ internal class TimelineInteraction(
             else -> rowTaskId(target)
         } ?: return
         // A locked board's long press lifted nothing, so moving afterwards must not reorder either.
-        if (kind == DragKind.REORDER && !editable) return
+        if (kind == DragKind.REORDER && (!editable || !reorderable)) return
         val index = tasks.indexOfFirst { it.id == taskId }
         if (index < 0) return
         val task = tasks[index]

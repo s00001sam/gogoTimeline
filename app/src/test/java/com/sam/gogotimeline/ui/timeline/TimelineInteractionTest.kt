@@ -63,6 +63,7 @@ class TimelineInteractionTest {
         selectedTaskId: Long? = null,
         tasks: List<TimelineTask> = listOf(visible, offScreenRight, partlyLeft),
         editable: Boolean = true,
+        reorderable: Boolean = true,
     ): Triple<TimelineInteraction, TimelineState, Recorder> {
         val state = TimelineState(noon, TimeUnit.HOUR, 64f, calendar = TAIPEI)
         state.updateLayout(DENSITY, AXIS_LEFT, AXIS_WIDTH, BODY_HEIGHT, tasks.size, ROW)
@@ -78,6 +79,7 @@ class TimelineInteractionTest {
             labelWidth = { it.length * 10f },
             haptic = { recorder.haptics++ },
             editable = editable,
+            reorderable = reorderable,
         )
         return Triple(interaction, state, recorder)
     }
@@ -89,6 +91,25 @@ class TimelineInteractionTest {
         assertEquals(listOf("locked"), recorder.events)
         assertEquals(0, recorder.haptics)
         assertNull(interaction.liftedTaskId)
+    }
+
+    @Test
+    fun sortedBoardLiftsNothingEvenOnTheEditedRow() = runTest {
+        val (notEditing, _, _) = setUp(reorderable = false)
+        assertFalse(notEditing.canLongPress(HitTarget.BarBody(1)))
+        val (editing, _, recorder) = setUp(selectedTaskId = 1, reorderable = false)
+        assertFalse(editing.canLongPress(HitTarget.RowBlank(1)))
+        // Moving times still works; a reorder that slips through starts nothing.
+        assertTrue(editing.canMoveTime(HitTarget.BarBody(1)))
+        editing.onDragStart(HitTarget.BarBody(1), DragKind.REORDER, Offset(axis(450f), rowY(0)))
+        assertNull(editing.drag)
+        assertTrue(recorder.events.isEmpty())
+    }
+
+    @Test
+    fun sortedAndLockedBoardStillSaysWhyALongPressDoesNothing() = runTest {
+        val (interaction, _, _) = setUp(editable = false, reorderable = false)
+        assertTrue(interaction.canLongPress(HitTarget.BarBody(1)))
     }
 
     @Test
