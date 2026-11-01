@@ -70,6 +70,24 @@ class BoardRepositoryImplTest {
     }
 
     @Test
+    fun lockIsSavedForThatBoardOnly() = runTest {
+        repository.setLocked(7, true)
+        repository.setLocked(7, false)
+        coVerify(exactly = 1) { boards.updateLocked(7, true) }
+        coVerify(exactly = 1) { boards.updateLocked(7, false) }
+        coVerify(exactly = 0) { boards.updateLocked(neq(7L), any()) }
+    }
+
+    @Test
+    fun storedLockComesBackAndNewBoardsStartUnlocked() = runTest {
+        coEvery { boards.observeBoard(1) } returns flowOf(BoardEntity(1, "Work", null, NOW, locked = true))
+        coEvery { boards.insert(any()) } returns 2
+        assertTrue(repository.observeBoard(1).first()!!.locked)
+        repository.create("Personal")
+        coVerify { boards.insert(match { !it.locked }) }
+    }
+
+    @Test
     fun invalidNamesAreRejectedBeforeWriting() = runTest {
         assertTrue(runCatching { repository.create("   ") }.isFailure)
         assertTrue(runCatching { repository.rename(7, "\n") }.isFailure)

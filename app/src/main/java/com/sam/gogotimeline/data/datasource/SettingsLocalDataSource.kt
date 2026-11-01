@@ -31,4 +31,6 @@ interface SettingsLocalDataSource {
     suspend fun updateLeftPaneExpanded(expanded: Boolean)
 
     suspend fun updateDrawerExpanded(expanded: Boolean)
+
+    suspend fun markLockConfirmed()
 }

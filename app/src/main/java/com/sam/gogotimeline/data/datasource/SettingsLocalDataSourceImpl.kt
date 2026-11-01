@@ -33,4 +33,6 @@ class SettingsLocalDataSourceImpl @Inject constructor(private val settingsDao: S
     override suspend fun updateLeftPaneExpanded(expanded: Boolean) = settingsDao.updateLeftPaneExpanded(expanded)
 
     override suspend fun updateDrawerExpanded(expanded: Boolean) = settingsDao.updateDrawerExpanded(expanded)
+
+    override suspend fun markLockConfirmed() = settingsDao.markLockConfirmed()
 }

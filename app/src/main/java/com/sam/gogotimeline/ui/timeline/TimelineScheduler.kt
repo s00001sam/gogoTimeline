@@ -98,6 +98,8 @@ fun TimelineScheduler(
     onZoomChange: (ZoomLevel) -> Unit = {},
     onNewTask: () -> Unit = {},
     showEmptyState: Boolean = true,
+    // False for a locked board: a long press reports onLockedLongPress instead of lifting the row.
+    editable: Boolean = true,
 ) {
     LaunchedEffect(calendar) { state.calendar = calendar }
     LaunchedEffect(widthMultiplier) { state.widthMultiplier = widthMultiplier }
@@ -141,6 +143,7 @@ fun TimelineScheduler(
         labelText = barTextOf,
         labelWidth = { textMeasurer.measure(it, styles.barText).size.width.toFloat() },
         haptic = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
+        editable = editable,
     )
     SideEffect { interaction.clearReleasedIfApplied() }
     val gestureHandler = rememberUpdatedState<TimelineGestureHandler>(interaction)

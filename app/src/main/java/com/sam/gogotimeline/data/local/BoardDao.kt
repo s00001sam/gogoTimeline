@@ -42,4 +42,10 @@ interface BoardDao {
 
     @Query("DELETE FROM boards WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("UPDATE boards SET locked = :locked WHERE id = :id")
+    suspend fun updateLocked(
+        id: Long,
+        locked: Boolean,
+    )
 }

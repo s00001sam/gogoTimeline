@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -248,12 +249,27 @@ private fun BoardItem(
             color = if (current) colorScheme.secondaryContainer else colorScheme.surface,
             contentColor = if (current) colorScheme.onSecondaryContainer else colorScheme.onSurface,
         ) {
-            Text(
-                text = board.name,
+            Row(
                 modifier = Modifier.padding(LayoutConst.SHEET_SPACING_DP.dp),
-                maxLines = LayoutConst.NAME_MAX_LINES,
-                overflow = TextOverflow.Ellipsis,
-            )
+                horizontalArrangement = Arrangement.spacedBy(LayoutConst.SHEET_SPACING_DP.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = board.name,
+                    modifier = Modifier.weight(1f),
+                    maxLines = LayoutConst.NAME_MAX_LINES,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // A marker only; the lock itself is toggled in the board's top bar.
+                if (board.locked) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_lock),
+                        contentDescription = stringResource(R.string.locked),
+                        modifier = Modifier.size(LayoutConst.DRAWER_LOCK_ICON_SIZE_DP.dp),
+                        tint = colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
@@ -297,8 +313,9 @@ private fun DrawerPreview(boards: List<Board>) {
 @Composable
 private fun BoardDrawerFewPreview() = DrawerPreview(
     listOf(
-        Board(2, "Work", null, 2),
+        Board(2, "Work", null, 2, locked = true),
         Board(1, "Personal Project for the second half of the year", null, 1),
+        Board(3, "Side project with a long name that needs two lines", null, 0, locked = true),
     ),
 )
 

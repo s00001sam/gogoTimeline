@@ -26,9 +26,12 @@ interface SettingsRepository {
 
     suspend fun setDrawerExpanded(expanded: Boolean)
 
+    /** Lock was accepted in the first-lock confirmation; it is never asked again. */
+    suspend fun markLockConfirmed()
+
     /**
      * Resets the settings page's values: multiplier, row height and all four snap intervals. The current unit, the
-     * left pane and the tablet drawer stay; the width scales back with the multiplier.
+     * left pane, the tablet drawer and the first-lock confirmation stay; the width scales back with the multiplier.
      */
     suspend fun resetToDefaults()
 }

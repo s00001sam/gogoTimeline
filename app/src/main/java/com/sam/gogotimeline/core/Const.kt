@@ -218,6 +218,11 @@ object LayoutConst {
     const val TOP_BAR_ACTION_GAP_PHONE_DP = 4f
     const val TOP_BAR_ACTION_GAP_TABLET_DP = 8f
 
+    // Lock beside the board name; its touch area reaches as far as the top-right buttons'.
+    const val LOCK_ICON_SIZE_DP = 20f
+    const val LOCK_ICON_GAP_DP = 4f
+    const val LOCKED_HINT_MILLIS = 2_000L
+
     // The whole top-left corner toggles the left pane, so the visible arrow can stay small.
     const val CORNER_ICON_SIZE_DP = 24f
 
@@ -272,7 +277,8 @@ object LayoutConst {
     const val EDITOR_PANEL_ANIMATION_MILLIS = 300
 
     // Drawer
-    const val DRAWER_WIDTH_DP = 240f
+    const val DRAWER_WIDTH_DP = 300f
     const val DRAWER_PADDING_DP = 16f
     const val DRAWER_ITEM_SPACING_DP = 2f
+    const val DRAWER_LOCK_ICON_SIZE_DP = 16f
 }

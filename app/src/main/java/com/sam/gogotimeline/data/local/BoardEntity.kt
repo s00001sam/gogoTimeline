@@ -13,4 +13,5 @@ data class BoardEntity(
     val name: String,
     val anchorTaskId: Long?,
     val lastOpenedAt: Long,
+    val locked: Boolean = false,
 )

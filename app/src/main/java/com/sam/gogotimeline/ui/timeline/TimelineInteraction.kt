@@ -26,6 +26,7 @@ data class TimelineCallbacks(
     val onTaskMove: (taskId: Long, toIndex: Int) -> Unit = { _, _ -> },
     val onZoomEnd: () -> Unit = {},
     val onVerticalScrollSettled: (topRowIndex: Int) -> Unit = {},
+    val onLockedLongPress: () -> Unit = {},
 )
 
 /** Sizes in px that the gestures need, measured by the scheduler. */
@@ -50,6 +51,7 @@ internal class TimelineInteraction(
 ) : TimelineGestureHandler {
     private var tasks: List<TimelineTask> = emptyList()
     private var selectedTaskId: Long? = null
+    private var editable = true
     private var snap: SnapInterval = SnapInterval.default(state.unit)
     private var sizes = InteractionSizes(0f, 1f, 0f, 0f, 0f, 0f, 0f)
     private var callbacks = TimelineCallbacks()
@@ -86,9 +88,11 @@ internal class TimelineInteraction(
         labelText: (TimelineTask) -> String,
         labelWidth: (String) -> Float,
         haptic: () -> Unit,
+        editable: Boolean = true,
     ) {
         this.tasks = tasks
         this.selectedTaskId = selectedTaskId
+        this.editable = editable
         this.snap = snap
         this.sizes = sizes
         this.callbacks = callbacks
@@ -177,8 +181,14 @@ internal class TimelineInteraction(
     override fun canMoveTime(target: HitTarget): Boolean =
         target is HitTarget.BarBody && target.taskId == selectedTaskId
 
+    /** Lifts the row for reordering; on a locked board only reports the attempt (no haptic) so the screen can say why. */
     override fun onLongPress(target: HitTarget) {
-        liftedTaskId = rowTaskId(target)
+        val taskId = rowTaskId(target) ?: return
+        if (!editable) {
+            callbacks.onLockedLongPress()
+            return
+        }
+        liftedTaskId = taskId
         haptic()
     }
 
@@ -222,6 +232,8 @@ internal class TimelineInteraction(
             is HitTarget.EndHandle -> target.taskId
             else -> rowTaskId(target)
         } ?: return
+        // A locked board's long press lifted nothing, so moving afterwards must not reorder either.
+        if (kind == DragKind.REORDER && !editable) return
         val index = tasks.indexOfFirst { it.id == taskId }
         if (index < 0) return
         val task = tasks[index]

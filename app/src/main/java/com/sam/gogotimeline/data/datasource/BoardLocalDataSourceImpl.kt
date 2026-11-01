@@ -32,4 +32,9 @@ class BoardLocalDataSourceImpl @Inject constructor(private val boardDao: BoardDa
     ) = boardDao.updateName(id, name)
 
     override suspend fun delete(id: Long) = boardDao.delete(id)
+
+    override suspend fun updateLocked(
+        id: Long,
+        locked: Boolean,
+    ) = boardDao.updateLocked(id, locked)
 }

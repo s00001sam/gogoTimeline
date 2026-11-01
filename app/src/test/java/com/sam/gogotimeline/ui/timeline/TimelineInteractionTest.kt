@@ -44,7 +44,9 @@ class TimelineInteractionTest {
             onTaskTimeChange = { id, start, end -> events += "time $id ${TAIPEI.local(start)} ${TAIPEI.local(end)}" },
             onTaskMove = { id, to -> events += "move $id $to" },
             onVerticalScrollSettled = { events += "top $it" },
+            onLockedLongPress = { events += "locked" },
         )
+        var haptics = 0
     }
 
     /** Runs animations instantly so a scroll-to-task finishes within advanceUntilIdle. */
@@ -60,6 +62,7 @@ class TimelineInteractionTest {
     private fun TestScope.setUp(
         selectedTaskId: Long? = null,
         tasks: List<TimelineTask> = listOf(visible, offScreenRight, partlyLeft),
+        editable: Boolean = true,
     ): Triple<TimelineInteraction, TimelineState, Recorder> {
         val state = TimelineState(noon, TimeUnit.HOUR, 64f, calendar = TAIPEI)
         state.updateLayout(DENSITY, AXIS_LEFT, AXIS_WIDTH, BODY_HEIGHT, tasks.size, ROW)
@@ -73,9 +76,49 @@ class TimelineInteractionTest {
             callbacks = recorder.callbacks,
             labelText = { "label ${it.id}" },
             labelWidth = { it.length * 10f },
-            haptic = {},
+            haptic = { recorder.haptics++ },
+            editable = editable,
         )
         return Triple(interaction, state, recorder)
+    }
+
+    @Test
+    fun lockedBoardLongPressLiftsNothingAndOnlyReportsTheAttempt() = runTest {
+        val (interaction, _, recorder) = setUp(editable = false)
+        interaction.onLongPress(interaction.hitTest(Offset(axis(450f), rowY(0))))
+        assertEquals(listOf("locked"), recorder.events)
+        assertEquals(0, recorder.haptics)
+        assertNull(interaction.liftedTaskId)
+    }
+
+    @Test
+    fun lockedBoardCannotReorderAfterALongPress() = runTest {
+        val (interaction, _, recorder) = setUp(editable = false)
+        val down = Offset(axis(450f), rowY(0))
+        interaction.onLongPress(interaction.hitTest(down))
+        interaction.onDragStart(HitTarget.BarBody(1), DragKind.REORDER, down)
+        interaction.onDrag(Offset(down.x, rowY(2)))
+        assertNull(interaction.drag)
+        interaction.onDragEnd()
+        assertEquals(listOf("locked"), recorder.events)
+    }
+
+    @Test
+    fun lockedBoardStillScrollsToAnOffScreenTaskOnTapAndIgnoresEmptyLongPress() = runTest {
+        val (interaction, state, recorder) = setUp(editable = false)
+        interaction.onLongPress(HitTarget.Empty)
+        interaction.onTap(HitTarget.LeftPaneRow(2))
+        advanceUntilIdle()
+        assertTrue(recorder.events.isEmpty())
+        assertEquals(MARGIN, state.timeToX(offScreenRight.start.toDouble()), 0.01f)
+    }
+
+    @Test
+    fun unlockedLongPressLiftsTheRowWithHaptic() = runTest {
+        val (interaction, _, recorder) = setUp()
+        interaction.onLongPress(interaction.hitTest(Offset(axis(450f), rowY(0))))
+        assertEquals(1, recorder.haptics)
+        assertEquals(1L, interaction.liftedTaskId)
     }
 
     private fun rowY(row: Int): Float = HEADER + row * ROW + ROW / 2

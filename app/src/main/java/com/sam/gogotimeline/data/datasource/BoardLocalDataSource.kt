@@ -30,4 +30,9 @@ interface BoardLocalDataSource {
     )
 
     suspend fun delete(id: Long)
+
+    suspend fun updateLocked(
+        id: Long,
+        locked: Boolean,
+    )
 }

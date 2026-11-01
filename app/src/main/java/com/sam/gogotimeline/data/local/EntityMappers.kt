@@ -63,6 +63,7 @@ fun BoardEntity.toDomain(): Board = Board(
     name = name,
     anchorTaskId = anchorTaskId,
     lastOpenedAt = lastOpenedAt,
+    locked = locked,
 )
 
 fun SettingsEntity.toDomain(): TimelineSettings = TimelineSettings(
@@ -77,6 +78,7 @@ fun SettingsEntity.toDomain(): TimelineSettings = TimelineSettings(
     rowHeightDp = rowHeightDp,
     leftPaneExpanded = leftPaneExpanded,
     drawerExpanded = drawerExpanded,
+    lockConfirmed = lockConfirmed,
 )
 
 fun TimelineSettings.toEntity(): SettingsEntity = SettingsEntity(
@@ -90,6 +92,7 @@ fun TimelineSettings.toEntity(): SettingsEntity = SettingsEntity(
     rowHeightDp = rowHeightDp,
     leftPaneExpanded = leftPaneExpanded,
     drawerExpanded = drawerExpanded,
+    lockConfirmed = lockConfirmed,
 )
 
 private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()

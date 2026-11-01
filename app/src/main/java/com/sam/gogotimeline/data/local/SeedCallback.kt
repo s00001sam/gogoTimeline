@@ -42,6 +42,7 @@ private fun BoardEntity.toValues() = ContentValues().apply {
     put("name", name)
     put("anchorTaskId", anchorTaskId)
     put("lastOpenedAt", lastOpenedAt)
+    put("locked", if (locked) 1 else 0)
 }
 
 private fun TaskEntity.toValues() = ContentValues().apply {
@@ -69,4 +70,5 @@ private fun SettingsEntity.toValues() = ContentValues().apply {
     put("rowHeightDp", rowHeightDp)
     put("leftPaneExpanded", if (leftPaneExpanded) 1 else 0)
     put("drawerExpanded", if (drawerExpanded) 1 else 0)
+    put("lockConfirmed", if (lockConfirmed) 1 else 0)
 }

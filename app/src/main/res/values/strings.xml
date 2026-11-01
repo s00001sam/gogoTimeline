@@ -45,6 +45,13 @@
     <string name="delete_failed">Couldn’t delete task. Please try again.</string>
     <string name="settings">Settings</string>
     <string name="more_options">More options</string>
+    <string name="lock_board">Lock board</string>
+    <string name="unlock_board">Unlock board</string>
+    <string name="board_locked">Board is locked</string>
+    <string name="locked">Locked</string>
+    <string name="lock">Lock</string>
+    <string name="lock_board_title">Lock “%1$s”?</string>
+    <string name="lock_board_message">Tasks can’t be added or edited until you unlock it.</string>
     <string name="back">Back</string>
     <string name="snap_interval_title">Snap interval (%1$s)</string>
     <string name="time_scale">Time scale</string>

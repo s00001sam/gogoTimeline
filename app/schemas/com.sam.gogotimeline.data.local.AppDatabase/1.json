@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "9bd8054eda215b019e394a0acbe035ee",
+    "identityHash": "460f102a58826704eec22ecfee04c6cb",
     "entities": [
       {
         "tableName": "boards",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `anchorTaskId` INTEGER, `lastOpenedAt` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `anchorTaskId` INTEGER, `lastOpenedAt` INTEGER NOT NULL, `locked` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -28,6 +28,12 @@
           {
             "fieldPath": "lastOpenedAt",
             "columnName": "lastOpenedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "locked",
+            "columnName": "locked",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -144,7 +150,7 @@
       },
       {
         "tableName": "settings",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `unit` TEXT NOT NULL, `dpPerUnit` REAL NOT NULL, `widthMultiplier` REAL NOT NULL, `snapHourMinutes` INTEGER NOT NULL, `snapDayMinutes` INTEGER NOT NULL, `snapWeekMinutes` INTEGER NOT NULL, `snapMonthMinutes` INTEGER NOT NULL, `rowHeightDp` REAL NOT NULL, `leftPaneExpanded` INTEGER NOT NULL, `drawerExpanded` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `unit` TEXT NOT NULL, `dpPerUnit` REAL NOT NULL, `widthMultiplier` REAL NOT NULL, `snapHourMinutes` INTEGER NOT NULL, `snapDayMinutes` INTEGER NOT NULL, `snapWeekMinutes` INTEGER NOT NULL, `snapMonthMinutes` INTEGER NOT NULL, `rowHeightDp` REAL NOT NULL, `leftPaneExpanded` INTEGER NOT NULL, `drawerExpanded` INTEGER NOT NULL, `lockConfirmed` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -211,6 +217,12 @@
             "columnName": "drawerExpanded",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "lockConfirmed",
+            "columnName": "lockConfirmed",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -223,7 +235,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9bd8054eda215b019e394a0acbe035ee')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '460f102a58826704eec22ecfee04c6cb')"
     ]
   }
 }

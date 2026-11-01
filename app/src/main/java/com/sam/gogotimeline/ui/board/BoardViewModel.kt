@@ -52,10 +52,12 @@ class BoardViewModel @Inject constructor(
     private val boardId = MutableStateFlow<Long?>(null)
     private val edit = MutableStateFlow(EditSession.restore(savedStateHandle))
     private val editStatus = MutableStateFlow(EditStatus())
+    private val confirmingLock = MutableStateFlow(false)
     private val topRowIndex = MutableStateFlow<Int?>(null)
     private val actionRequests = Channel<BoardAction>(Channel.CONFLATED)
 
-    private var actionAfterEditing: BoardAction? = null
+    // Runs once editing has ended through Save, Discard or a clean close; Cancel in the dialog drops it.
+    private var afterEditing: (() -> Unit)? = null
 
     /** App-level action to perform after this board has safely finished editing. */
     val actions: Flow<BoardAction> = actionRequests.receiveAsFlow()
@@ -82,39 +84,56 @@ class BoardViewModel @Inject constructor(
 
     /** Called by the route host; the id is data, while navigation stays outside this ViewModel. */
     fun openBoard(id: Long) {
-        if (boardId.value != id) boardId.value = id
+        if (boardId.value == id) return
+        boardId.value = id
+        confirmingLock.value = false
     }
 
+    /** A tap on a task starts editing it, unless the board is locked. */
     fun onTaskTap(taskId: Long) {
-        if (edit.value != null) return
-        val task = ready?.tasks?.firstOrNull { it.id == taskId } ?: return
+        val state = ready ?: return
+        if (edit.value != null || state.board.locked) return
+        val task = state.tasks.firstOrNull { it.id == taskId } ?: return
         setEdit(EditSession.from(task))
     }
 
     /** + or the empty state's New task: a draft with [schedule] and a random color, not saved until ✓. */
     fun onNewTask(schedule: TaskSchedule) {
-        if (edit.value != null || ready == null) return
+        val state = ready ?: return
+        if (edit.value != null || state.board.locked) return
         setEdit(EditSession.newTask(schedule, Random.nextInt(LayoutConst.TASK_COLOR_COUNT)))
     }
 
     /** Leaving the board first resolves an unsaved task draft; the app layer performs [action]. */
-    fun onAppAction(action: BoardAction) {
-        val session = edit.value
+    fun onAppAction(action: BoardAction) = runAfterEditing { actionRequests.trySend(action) }
+
+    /**
+     * Unlocks right away; locks right away once the first-lock confirmation was accepted, otherwise asks it first.
+     * While editing, the draft is resolved first like leaving the board, and only then may it ask (spec 9).
+     */
+    fun onToggleLock() = runAfterEditing {
+        val state = ready ?: return@runAfterEditing
         when {
-            session == null -> actionRequests.trySend(action)
-
-            editStatus.value.isBusy -> Unit
-
-            session.isDirty -> {
-                actionAfterEditing = action
-                editStatus.value = EditStatus(confirmingClose = true)
-            }
-
-            else -> {
-                endEditing()
-                actionRequests.trySend(action)
-            }
+            state.board.locked -> write { boardRepository.setLocked(state.board.id, false) }
+            state.settings.lockConfirmed -> write { boardRepository.setLocked(state.board.id, true) }
+            else -> confirmingLock.value = true
         }
+    }
+
+    /** Lock in the first-lock confirmation: locks, and never asks again in this app. */
+    fun onLockConfirm() {
+        if (!confirmingLock.value) return
+        confirmingLock.value = false
+        val boardId = ready?.board?.id ?: return
+        write {
+            boardRepository.setLocked(boardId, true)
+            settingsRepository.markLockConfirmed()
+        }
+    }
+
+    /** Cancel, outside or back: stays unlocked, and the next lock asks again. */
+    fun onLockCancel() {
+        confirmingLock.value = false
     }
 
     fun onEmptyTap() = requestClose()
@@ -205,7 +224,7 @@ class BoardViewModel @Inject constructor(
     /** Closes the Save / Discard or Delete dialog and goes back to editing with the draft kept. */
     fun onCancelDialog() {
         if (editStatus.value.isBusy) return
-        actionAfterEditing = null
+        afterEditing = null
         editStatus.value = EditStatus()
     }
 
@@ -237,10 +256,10 @@ class BoardViewModel @Inject constructor(
         taskId: Long,
         toIndex: Int,
     ) {
-        val boardId = ready?.board?.id ?: return
+        val board = ready?.board ?: return
         // The new task's row is only a draft; it gets a place in the database when saved.
-        if (taskId == TaskEdit.NEW_TASK_ID) return
-        write { taskRepository.moveTask(boardId, taskId, toIndex) }
+        if (board.locked || taskId == TaskEdit.NEW_TASK_ID) return
+        write { taskRepository.moveTask(board.id, taskId, toIndex) }
     }
 
     fun onZoomChange(zoom: ZoomLevel) {
@@ -258,6 +277,29 @@ class BoardViewModel @Inject constructor(
 
     fun retry() {
         loadRequests.update { it + 1 }
+    }
+
+    /**
+     * Runs [block] now when not editing; after a clean close when nothing changed; or after Save / Discard, which are
+     * asked first. Nothing happens while saving or deleting.
+     */
+    private fun runAfterEditing(block: () -> Unit) {
+        val session = edit.value
+        when {
+            session == null -> block()
+
+            editStatus.value.isBusy -> Unit
+
+            session.isDirty -> {
+                afterEditing = block
+                editStatus.value = EditStatus(confirmingClose = true)
+            }
+
+            else -> {
+                endEditing()
+                block()
+            }
+        }
     }
 
     /** Ends editing right away when nothing changed; otherwise asks Save / Discard. */
@@ -280,8 +322,9 @@ class BoardViewModel @Inject constructor(
     private fun endEditing() {
         setEdit(null)
         editStatus.value = EditStatus()
-        actionAfterEditing?.let(actionRequests::trySend)
-        actionAfterEditing = null
+        val block = afterEditing
+        afterEditing = null
+        block?.invoke()
     }
 
     private fun setEdit(session: EditSession?) {
@@ -296,16 +339,20 @@ class BoardViewModel @Inject constructor(
                 boardRepository.observeBoard(boardId),
                 taskRepository.observeTasks(boardId),
                 settingsRepository.observeSettings(),
-                edit,
-                editStatus,
-            ) { board, tasks, settings, edit, editStatus ->
-                if (board == null) BoardUiState.Error else BoardUiState.Ready(board, tasks, settings, edit, editStatus)
+                combine(edit, editStatus, ::Pair),
+                confirmingLock,
+            ) { board, tasks, settings, (edit, editStatus), confirmingLock ->
+                if (board == null) {
+                    BoardUiState.Error
+                } else {
+                    BoardUiState.Ready(board, tasks, settings, edit, editStatus, confirmingLock)
+                }
             },
         )
     }.onStart { emit(BoardUiState.Loading) }
         .catch { emit(BoardUiState.Error) }
 
-    // Reorder, zoom and pane writes do not surface failures; the screen keeps showing what the database has.
+    // Reorder, zoom, pane and lock writes do not surface failures; the screen keeps showing what the database has.
     private fun write(block: suspend () -> Unit) {
         viewModelScope.launch { ignoreFailure(block) }
     }

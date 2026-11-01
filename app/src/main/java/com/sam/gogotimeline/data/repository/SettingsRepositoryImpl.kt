@@ -40,6 +40,8 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setDrawerExpanded(expanded: Boolean) = settingsDataSource.updateDrawerExpanded(expanded)
 
+    override suspend fun markLockConfirmed() = settingsDataSource.markLockConfirmed()
+
     override suspend fun resetToDefaults() = transaction.run {
         val current = current()
         val defaults = TimelineSettings.DEFAULT
@@ -49,6 +51,7 @@ class SettingsRepositoryImpl @Inject constructor(
                 zoom = zoom,
                 leftPaneExpanded = current.leftPaneExpanded,
                 drawerExpanded = current.drawerExpanded,
+                lockConfirmed = current.lockConfirmed,
             ).toEntity(),
         )
     }

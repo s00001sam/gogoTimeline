@@ -47,4 +47,9 @@ class BoardRepositoryImpl @Inject constructor(
     }
 
     override suspend fun delete(boardId: Long) = boardDataSource.delete(boardId)
+
+    override suspend fun setLocked(
+        boardId: Long,
+        locked: Boolean,
+    ) = boardDataSource.updateLocked(boardId, locked)
 }

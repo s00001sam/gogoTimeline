@@ -46,6 +46,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -125,8 +127,10 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** The board screen: reads the board from [BoardViewModel] and keeps the viewport in the scheduler's own state. */
 @Composable
@@ -231,6 +235,8 @@ fun BoardScreen(
     BoardContent(
         modifier = modifier,
         boardName = ready?.board?.name.orEmpty(),
+        locked = ready?.board?.locked == true,
+        onToggleLock = viewModel::onToggleLock,
         state = state,
         calendar = calendar,
         tasks = tasks,
@@ -282,6 +288,13 @@ fun BoardScreen(
         onConfirmEdit = { viewModel.onConfirm(calendar) },
         onDeleteTask = viewModel::onDeleteRequest,
     )
+    if (ready?.confirmingLock == true) {
+        LockBoardDialog(
+            boardName = ready.board.name,
+            onLock = viewModel::onLockConfirm,
+            onCancel = viewModel::onLockCancel,
+        )
+    }
     val edit = ready?.edit ?: return
     val editStatus = ready.editStatus
     if (editStatus.confirmingClose) {
@@ -323,6 +336,8 @@ fun BoardContent(
     onRetry: () -> Unit,
     todayDayOfMonth: Int,
     onGoToToday: () -> Unit,
+    locked: Boolean = false,
+    onToggleLock: () -> Unit = {},
     onZoomChange: (ZoomLevel) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onRenameBoard: () -> Unit = {},
@@ -370,6 +385,24 @@ fun BoardContent(
         skipHiddenState = false,
     )
     val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState)
+    // A long press on a locked board says why nothing happens (the one hint text, spec 9); a repeat restarts it.
+    val lockedMessage = stringResource(R.string.board_locked)
+    var lockedHint by remember { mutableStateOf<Job?>(null) }
+    val schedulerCallbacks = remember(callbacks, lockedMessage) {
+        callbacks.copy(
+            onLockedLongPress = {
+                lockedHint?.cancel()
+                lockedHint = scope.launch {
+                    withTimeoutOrNull(LayoutConst.LOCKED_HINT_MILLIS) {
+                        scaffoldState.snackbarHostState.showSnackbar(
+                            lockedMessage,
+                            duration = SnackbarDuration.Indefinite,
+                        )
+                    }
+                }
+            },
+        )
+    }
     var shownSheet by remember { mutableStateOf(sheet) }
     if (sheet != null) shownSheet = sheet
     val editing = sheet != null
@@ -510,6 +543,7 @@ fun BoardContent(
             scaffoldState = scaffoldState,
             sheetPeekHeight = with(LocalDensity.current) { (if (useSheet) sheetHeightPx else 0).toDp() },
             sheetDragHandle = null,
+            snackbarHost = { SnackbarHost(it, Modifier.windowInsetsPadding(WindowInsets.navigationBars)) },
             sheetContent = {
                 if (useSheet) {
                     shownSheet?.let {
@@ -535,12 +569,23 @@ fun BoardContent(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            boardName,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        // The name shrinks to "…" first, so the lock beside it always stays visible.
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                boardName,
+                                modifier = Modifier.weight(1f, fill = false),
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (interactive) {
+                                LockIcon(
+                                    modifier = Modifier.padding(start = LayoutConst.LOCK_ICON_GAP_DP.dp),
+                                    locked = locked,
+                                    onClick = onToggleLock,
+                                )
+                            }
+                        }
                     },
                     navigationIcon = {
                         if (showNavigation) {
@@ -611,10 +656,11 @@ fun BoardContent(
                         selectedTaskId = selectedTaskId,
                         snapIntervals = settings.snapIntervals,
                         widthMultiplier = settings.widthMultiplier,
-                        callbacks = callbacks,
+                        callbacks = schedulerCallbacks,
                         onZoomChange = onZoomChange,
                         onNewTask = onNewTask,
-                        showEmptyState = interactive,
+                        showEmptyState = interactive && !locked,
+                        editable = !locked,
                     )
                     if (interactionBlocked) {
                         // The drawer scrim may not consume the first down event while its opening animation starts.
@@ -635,7 +681,7 @@ fun BoardContent(
                             .align(Alignment.BottomEnd)
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .padding(LayoutConst.FAB_MARGIN_DP.dp),
-                        visible = interactive && tasks.isNotEmpty() && !editing,
+                        visible = interactive && tasks.isNotEmpty() && !editing && !locked,
                         onClick = onNewTask,
                     )
                     if (!interactive) {
@@ -866,17 +912,37 @@ private fun TodayButton(
 private fun topBarActionGap(): Dp =
     (if (isTabletLayout()) LayoutConst.TOP_BAR_ACTION_GAP_TABLET_DP else LayoutConst.TOP_BAR_ACTION_GAP_PHONE_DP).dp
 
-/** A top-right button: tappable a little beyond its content (more on tablets), with a circular ripple there. */
+/** How far a top bar button is tappable beyond its content; more on tablets. */
 @Composable
-private fun Modifier.topBarAction(onClick: () -> Unit): Modifier {
-    val reach = if (isTabletLayout()) {
-        LayoutConst.TOP_BAR_ACTION_REACH_TABLET_DP
-    } else {
-        LayoutConst.TOP_BAR_ACTION_REACH_PHONE_DP
-    }
-    return clip(CircleShape)
-        .clickable(role = Role.Button, onClick = onClick)
-        .padding(reach.dp)
+private fun topBarActionReach(): Dp = (
+    if (isTabletLayout()) LayoutConst.TOP_BAR_ACTION_REACH_TABLET_DP else LayoutConst.TOP_BAR_ACTION_REACH_PHONE_DP
+    ).dp
+
+/** A top-right button: tappable a little beyond its content, with a circular ripple there. */
+@Composable
+private fun Modifier.topBarAction(onClick: () -> Unit): Modifier = clip(CircleShape)
+    .clickable(role = Role.Button, onClick = onClick)
+    .padding(topBarActionReach())
+
+/**
+ * The lock beside the board name (spec 9): a gray open lock, or a filled one in the primary color when locked. No
+ * ripple, since the icon change is the feedback; tappable as far as the top-right buttons.
+ */
+@Composable
+private fun LockIcon(
+    modifier: Modifier = Modifier,
+    locked: Boolean,
+    onClick: () -> Unit,
+) {
+    Icon(
+        painter = painterResource(if (locked) R.drawable.ic_lock else R.drawable.ic_lock_open),
+        contentDescription = stringResource(if (locked) R.string.unlock_board else R.string.lock_board),
+        modifier = modifier
+            .clickable(interactionSource = null, indication = null, role = Role.Button, onClick = onClick)
+            .padding(topBarActionReach())
+            .size(LayoutConst.LOCK_ICON_SIZE_DP.dp),
+        tint = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /**
@@ -942,10 +1008,13 @@ private fun BoardPreview(
     isLoading: Boolean = false,
     isError: Boolean = false,
     sheet: TaskSheetState? = null,
+    locked: Boolean = false,
 ) {
     PreviewSurface {
         BoardContent(
             boardName = if (isLoading || isError) "" else "Sample Project",
+            locked = locked,
+            showNavigation = true,
             state = remember {
                 TimelineState(
                     initialCenterTime = previewNow.toDouble(),
@@ -974,6 +1043,18 @@ private fun BoardPreview(
 @Composable
 private fun BoardReadyPreview() {
     BoardPreview(tasks = FakeTimelineData.tasks(previewNow, previewCalendar), selectedTaskId = 1L)
+}
+
+@ThemePreviews
+@Composable
+private fun BoardLockedPreview() {
+    BoardPreview(tasks = FakeTimelineData.tasks(previewNow, previewCalendar), locked = true)
+}
+
+@ThemePreviews
+@Composable
+private fun BoardLockedEmptyPreview() {
+    BoardPreview(tasks = emptyList(), locked = true)
 }
 
 @ThemePreviews

@@ -16,6 +16,8 @@ sealed interface BoardUiState {
         val settings: TimelineSettings,
         val edit: EditSession?,
         val editStatus: EditStatus = EditStatus(),
+        /** The first-lock confirmation is showing (spec 9); editing has always ended by then. */
+        val confirmingLock: Boolean = false,
     ) : BoardUiState {
         val selectedTaskId: Long? get() = edit?.draft?.taskId
 

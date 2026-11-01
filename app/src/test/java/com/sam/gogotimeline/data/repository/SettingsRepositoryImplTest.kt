@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,12 +81,14 @@ class SettingsRepositoryImplTest {
     }
 
     @Test
-    fun resetKeepsUnitPaneAndDrawerAndScalesTheWidthBack() = runTest {
-        // 2x with Hour pinched to 192dp goes back to 1x at 96dp (spec 8); a closed tablet drawer stays closed.
+    fun resetKeepsUnitPaneDrawerAndLockConfirmationAndScalesTheWidthBack() = runTest {
+        // 2x with Hour pinched to 192dp goes back to 1x at 96dp (spec 8); a closed tablet drawer stays closed, and the
+        // first-lock confirmation is not asked again (spec 9).
         coEvery { settings.get() } returns stored.copy(
             zoom = ZoomLevel(TimeUnit.HOUR, 192f),
             widthMultiplier = 2f,
             drawerExpanded = false,
+            lockConfirmed = true,
         ).toEntity()
         coEvery { settings.insert(any()) } answers { assertTrue(transaction.active) }
         repository.resetToDefaults()
@@ -93,6 +96,7 @@ class SettingsRepositoryImplTest {
             zoom = ZoomLevel(TimeUnit.HOUR, 96f),
             leftPaneExpanded = true,
             drawerExpanded = false,
+            lockConfirmed = true,
         )
         coVerify { settings.insert(expected.toEntity()) }
     }
@@ -101,6 +105,13 @@ class SettingsRepositoryImplTest {
     fun drawerStateIsSavedOnItsOwn() = runTest {
         repository.setDrawerExpanded(false)
         coVerify { settings.updateDrawerExpanded(false) }
+    }
+
+    @Test
+    fun lockConfirmationIsSavedOnItsOwnAndStartsUnseen() = runTest {
+        repository.markLockConfirmed()
+        coVerify(exactly = 1) { settings.markLockConfirmed() }
+        assertFalse(TimelineSettings.DEFAULT.lockConfirmed)
     }
 
     @Test

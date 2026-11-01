@@ -27,4 +27,10 @@ interface BoardRepository {
     )
 
     suspend fun delete(boardId: Long)
+
+    /** A locked board blocks task changes only; it still scrolls, zooms, and can be renamed or deleted. */
+    suspend fun setLocked(
+        boardId: Long,
+        locked: Boolean,
+    )
 }

@@ -383,6 +383,150 @@ class BoardViewModelTest {
     }
 
     @Test
+    fun lockedBoardStartsNoEditingNewTaskOrReorder() {
+        board.value = board.value!!.copy(locked = true)
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onNewTask(later)
+        viewModel.onTaskMove(B, 0)
+        assertNull(viewModel.ready.edit)
+        coVerify(exactly = 0) { taskRepository.moveTask(any(), any(), any()) }
+    }
+
+    // The first-lock confirmation was already accepted, so locking does not ask.
+    private fun lockConfirmedBefore() {
+        settings.tryEmit(TimelineSettings.DEFAULT.copy(lockConfirmed = true))
+    }
+
+    @Test
+    fun lockSavesTheOppositeStateRightAwayOnceConfirmedBefore() {
+        lockConfirmedBefore()
+        val viewModel = viewModel()
+        viewModel.onToggleLock()
+        coVerify { boardRepository.setLocked(BOARD, true) }
+        assertFalse(viewModel.ready.confirmingLock)
+        board.value = board.value!!.copy(locked = true)
+        viewModel.onToggleLock()
+        coVerify { boardRepository.setLocked(BOARD, false) }
+    }
+
+    @Test
+    fun firstLockAsksAndLocksOnlyAfterLock() {
+        val viewModel = viewModel()
+        viewModel.onToggleLock()
+        assertTrue(viewModel.ready.confirmingLock)
+        coVerify(exactly = 0) { boardRepository.setLocked(any(), any()) }
+        viewModel.onLockConfirm()
+        assertFalse(viewModel.ready.confirmingLock)
+        coVerify { boardRepository.setLocked(BOARD, true) }
+        coVerify { settingsRepository.markLockConfirmed() }
+    }
+
+    @Test
+    fun cancelledFirstLockStaysUnlockedAndAsksAgainNextTime() {
+        val viewModel = viewModel()
+        viewModel.onToggleLock()
+        viewModel.onLockCancel()
+        assertFalse(viewModel.ready.confirmingLock)
+        // A stray confirm after cancelling (e.g. a double tap) must not lock.
+        viewModel.onLockConfirm()
+        viewModel.onToggleLock()
+        assertTrue(viewModel.ready.confirmingLock)
+        coVerify(exactly = 0) { boardRepository.setLocked(any(), any()) }
+        coVerify(exactly = 0) { settingsRepository.markLockConfirmed() }
+    }
+
+    @Test
+    fun unlockingNeverAsks() {
+        board.value = board.value!!.copy(locked = true)
+        val viewModel = viewModel()
+        viewModel.onToggleLock()
+        assertFalse(viewModel.ready.confirmingLock)
+        coVerify { boardRepository.setLocked(BOARD, false) }
+    }
+
+    @Test
+    fun lockWhileEditingWithoutChangesEndsEditingThenAsks() {
+        val viewModel = viewModel()
+        viewModel.onTaskTap(B)
+        viewModel.onToggleLock()
+        assertNull(viewModel.ready.edit)
+        assertTrue(viewModel.ready.confirmingLock)
+    }
+
+    @Test
+    fun unsavedChangesAreResolvedBeforeTheFirstLockQuestion() {
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onToggleLock()
+        assertTrue(viewModel.ready.editStatus.confirmingClose)
+        assertFalse(viewModel.ready.confirmingLock)
+        viewModel.onDiscard()
+        assertNull(viewModel.ready.edit)
+        assertTrue(viewModel.ready.confirmingLock)
+        // Cancel now leaves the board unlocked; the draft was already discarded.
+        viewModel.onLockCancel()
+        assertNull(viewModel.ready.edit)
+        coVerify(exactly = 0) { boardRepository.setLocked(any(), any()) }
+    }
+
+    @Test
+    fun switchingBoardsDropsAnOpenLockQuestion() {
+        val viewModel = viewModel()
+        viewModel.onToggleLock()
+        every { boardRepository.observeBoard(99) } returns MutableStateFlow(Board(99, "Other", null, 0))
+        every { taskRepository.observeTasks(99) } returns MutableStateFlow(emptyList())
+        viewModel.openBoard(99)
+        assertFalse(viewModel.ready.confirmingLock)
+    }
+
+    @Test
+    fun lockWithUnsavedChangesAsksFirstAndLocksAfterSaveOrDiscard() {
+        lockConfirmedBefore()
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onToggleLock()
+        assertTrue(viewModel.ready.editStatus.confirmingClose)
+        coVerify(exactly = 0) { boardRepository.setLocked(any(), any()) }
+        viewModel.onSave(TAIPEI)
+        coVerify { taskRepository.saveTask(any()) }
+        coVerify(exactly = 1) { boardRepository.setLocked(BOARD, true) }
+
+        board.value = board.value!!.copy(locked = false)
+        viewModel.editBWithLaterTime()
+        viewModel.onToggleLock()
+        viewModel.onDiscard()
+        coVerify(exactly = 2) { boardRepository.setLocked(BOARD, true) }
+    }
+
+    @Test
+    fun cancellingTheLockQuestionKeepsEditingAndNeverLocks() {
+        lockConfirmedBefore()
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onToggleLock()
+        viewModel.onCancelDialog()
+        assertEquals(B, viewModel.ready.selectedTaskId)
+        // A later close must not lock either.
+        viewModel.onEmptyTap()
+        viewModel.onDiscard()
+        coVerify(exactly = 0) { boardRepository.setLocked(any(), any()) }
+    }
+
+    @Test
+    fun failedSaveFromTheLockQuestionKeepsEditingAndDoesNotLock() {
+        coEvery { taskRepository.saveTask(any()) } throws IllegalStateException("disk full")
+        lockConfirmedBefore()
+        val viewModel = viewModel()
+        viewModel.editBWithLaterTime()
+        viewModel.onToggleLock()
+        viewModel.onSave(TAIPEI)
+        assertTrue(viewModel.ready.editStatus.saveFailed)
+        assertEquals(B, viewModel.ready.selectedTaskId)
+        coVerify(exactly = 0) { boardRepository.setLocked(any(), any()) }
+    }
+
+    @Test
     fun newTaskStartsAnUnsavedDraftWithARandomColor() {
         val viewModel = viewModel()
         viewModel.onNewTask(later)

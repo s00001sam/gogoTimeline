@@ -18,6 +18,7 @@ data class SettingsEntity(
     val rowHeightDp: Float,
     val leftPaneExpanded: Boolean,
     val drawerExpanded: Boolean,
+    val lockConfirmed: Boolean,
 ) {
     companion object {
         const val ID = 0
