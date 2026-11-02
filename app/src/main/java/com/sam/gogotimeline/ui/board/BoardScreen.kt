@@ -396,6 +396,7 @@ fun BoardContent(
     val interactive = hasBoard && !isLoading && !isError
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val tablet = isTabletLayout()
     // The bottom sheet needs height; wide windows edit in a floating card and short narrow ones on a full page (7.1).
     val editorLayout = editorLayout()
     val useSheet = editorLayout == EditorLayout.BOTTOM_SHEET
@@ -502,6 +503,15 @@ fun BoardContent(
     val rowGapPx = with(LocalDensity.current) { LayoutConst.ROW_ABOVE_SHEET_DP.dp.toPx() }
     val currentSelectedRow by rememberUpdatedState(tasks.indexOfFirst { it.id == selectedTaskId })
     val currentSheetHeightPx by rememberUpdatedState(sheetHeightPx)
+    var wasEditing by remember { mutableStateOf(editing) }
+    LaunchedEffect(editing) {
+        val opened = editing && !wasEditing
+        wasEditing = editing
+        if (opened && tablet && !locked) {
+            val row = currentSelectedRow
+            if (row >= 0) state.animateRowToSecondRow(row)
+        }
+    }
     LaunchedEffect(sheetState) {
         var previous = sheetState.currentValue
         snapshotFlow { sheetState.currentValue }.collect { value ->
@@ -584,7 +594,7 @@ fun BoardContent(
     }
     BackHandler(enabled = viewing) { onCloseViewer() }
     val paneWidth by animateDpAsState(
-        targetValue = leftPaneWidth(isTabletLayout(), settings.leftPaneExpanded),
+        targetValue = leftPaneWidth(tablet, settings.leftPaneExpanded),
         animationSpec = tween(LayoutConst.LEFT_PANE_ANIMATION_MILLIS),
         label = "leftPaneWidth",
     )

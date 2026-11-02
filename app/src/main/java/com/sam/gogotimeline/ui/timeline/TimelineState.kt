@@ -225,6 +225,10 @@ class TimelineState(
         animateScrollYTo(clampScrollY(GestureMath.rowAboveSheetScrollY(rowIndex, rowHeightPx, sheetTopPx, gapPx)))
     }
 
+    suspend fun animateRowToSecondRow(rowIndex: Int) {
+        animateScrollYTo(clampScrollY(GestureMath.secondRowScrollY(rowIndex, rowHeightPx)))
+    }
+
     /** Smoothly scrolls just enough to show row [rowIndex] whole; a row already in view stays put. */
     suspend fun animateRowIntoView(rowIndex: Int) {
         val to = clampScrollY(GestureMath.scrollYToReveal(rowIndex, rowHeightPx, scrollY, viewportHeightPx))

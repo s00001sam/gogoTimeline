@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -95,7 +96,8 @@ fun BoardDrawerLayout(
                     BoardDrawerContent(
                         modifier = Modifier
                             .width(LayoutConst.DRAWER_WIDTH_DP.dp)
-                            .fillMaxHeight(),
+                            .fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.surface),
                         boards = boards,
                         currentBoardId = currentBoardId,
                         onBoardSelected = { id -> if (id != currentBoardId) onBoardSelected(id) },
@@ -183,7 +185,11 @@ private fun BoardDrawerContent(
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(LayoutConst.DRAWER_PADDING_DP.dp),
     ) {
-        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
+        Text(
+            text = stringResource(R.string.app_name),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleLarge,
+        )
         Button(
             onClick = onNewBoard,
             modifier = Modifier

@@ -285,6 +285,11 @@ class GestureMathTest {
     }
 
     @Test
+    fun selectedRowMovesToTheSecondVisibleLine() {
+        assertEquals(576f, GestureMath.secondRowScrollY(10, ROW))
+    }
+
+    @Test
     fun aRowAlreadyInViewKeepsTheScroll() {
         // Rows 2–6 fit in 320px from scroll 128; row 4 is in the middle.
         assertEquals(128f, GestureMath.scrollYToReveal(4, ROW, scrollY = 128f, viewportHeightPx = 320f))

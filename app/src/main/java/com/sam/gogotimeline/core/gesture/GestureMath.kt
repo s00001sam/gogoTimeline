@@ -143,6 +143,12 @@ object GestureMath {
         gapPx: Float,
     ): Float = (rowIndex + 1) * rowHeightPx + gapPx - sheetTopPx
 
+    /** The scroll that puts row [rowIndex] on the second visible line. */
+    fun secondRowScrollY(
+        rowIndex: Int,
+        rowHeightPx: Float,
+    ): Float = (rowIndex - 1) * rowHeightPx
+
     /**
      * The smallest scroll change that shows row [rowIndex] whole in a body [viewportHeightPx] tall: [scrollY] itself
      * when it already is, else the row at the nearer edge. The caller clamps it to the limits.
