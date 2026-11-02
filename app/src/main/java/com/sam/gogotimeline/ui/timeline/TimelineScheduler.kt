@@ -233,6 +233,7 @@ fun TimelineScheduler(
                             state = state,
                             textMeasurer = textMeasurer,
                             style = styles.barText,
+                            onClick = { callbacks.onTaskTap(task.id) },
                         )
                     }
                 }
@@ -418,6 +419,7 @@ private fun ScheduledBar(
     state: TimelineState,
     textMeasurer: TextMeasurer,
     style: TextStyle,
+    onClick: () -> Unit,
 ) {
     val offset = rowOffsetPx(index, drag, reorderTarget, rowPx, interaction)
     val text = remember(task, today, calendar) {
@@ -436,6 +438,7 @@ private fun ScheduledBar(
         style = style,
         barLeftPx = { barLeftPx(state, task) },
         axisWidthPx = { state.viewportWidthPx },
+        onClick = onClick,
     )
 }
 

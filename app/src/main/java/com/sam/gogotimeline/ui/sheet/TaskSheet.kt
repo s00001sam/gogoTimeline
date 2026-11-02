@@ -83,13 +83,16 @@ import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.text.TaskNotes
 import com.sam.gogotimeline.core.text.TaskTitle
+import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.TaskTimeFormat
 import com.sam.gogotimeline.core.time.TimeError
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
 import com.sam.gogotimeline.ui.theme.GogoTimelineTheme
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 import kotlin.math.roundToInt
 
 /** What the task sheet shows; dates and times are local to the current time zone. */
@@ -143,6 +146,7 @@ fun TaskSheet(
     state: TaskSheetState,
     expanded: Boolean,
     focusName: Boolean,
+    calendar: CalendarContext,
     onTitleChange: (String) -> Unit,
     onNotesChange: (String) -> Unit,
     onDatePick: (Boundary, LocalDate) -> Unit,
@@ -204,6 +208,7 @@ fun TaskSheet(
                 state = state,
                 focusName = focusName,
                 showHandle = inSheet,
+                calendar = calendar,
                 onNameBottomInRoot = { nameBottomPx = it },
                 onTitleChange = onTitleChange,
                 onDatePick = onDatePick,
@@ -240,6 +245,7 @@ private fun CollapsedPart(
     state: TaskSheetState,
     focusName: Boolean,
     showHandle: Boolean,
+    calendar: CalendarContext,
     onNameBottomInRoot: (Float) -> Unit,
     onTitleChange: (String) -> Unit,
     onDatePick: (Boundary, LocalDate) -> Unit,
@@ -356,6 +362,9 @@ private fun CollapsedPart(
         if (picker.isDate) {
             SheetDatePickerDialog(
                 initial = moment.date,
+                boundary = picker.boundary,
+                time = moment.time,
+                calendar = calendar,
                 onPick = { onDatePick(picker.boundary, it) },
                 onDismiss = close,
             )
@@ -656,6 +665,8 @@ private val previewState = TaskSheetState(
     saveFailed = false,
 )
 
+private val previewCalendar = CalendarContext(ZoneId.of("Asia/Taipei"), DayOfWeek.SUNDAY)
+
 @Composable
 private fun SheetPreview(
     state: TaskSheetState,
@@ -666,6 +677,7 @@ private fun SheetPreview(
             state = state,
             expanded = expanded,
             focusName = false,
+            calendar = previewCalendar,
             onTitleChange = {},
             onNotesChange = {},
             onDatePick = { _, _ -> },

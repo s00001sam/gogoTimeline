@@ -46,15 +46,22 @@ class BoardViewModelTest {
     private fun task(
         id: Long,
         order: Int,
+        title: String = "Task $id",
+        schedule: TaskSchedule = TaskSchedule.Timed(
+            TimeRange(TAIPEI.at("2026-10-31T09:00"), TAIPEI.at("2026-10-31T10:30")),
+        ),
+        colorIndex: Int = order,
+        notes: String = "",
     ) = Task(
         id = id,
         boardId = BOARD,
-        title = "Task $id",
-        schedule = TaskSchedule.Timed(TimeRange(TAIPEI.at("2026-10-31T09:00"), TAIPEI.at("2026-10-31T10:30"))),
-        colorIndex = order,
+        title = title,
+        schedule = schedule,
+        colorIndex = colorIndex,
         sortOrder = order,
         createdAt = TAIPEI.at("2026-10-16T09:00"),
         updatedAt = TAIPEI.at("2026-10-20T09:00"),
+        notes = notes,
     )
 
     private val a = task(A, 0)
@@ -66,11 +73,27 @@ class BoardViewModelTest {
     private val tasks = MutableStateFlow(listOf(a, b, c))
     private val settings = MutableSharedFlow<TimelineSettings>(replay = 1).apply { tryEmit(TimelineSettings.DEFAULT) }
 
+    private fun applySavedEdit(edit: TaskEdit) {
+        tasks.value = tasks.value.map { task ->
+            if (task.id == edit.taskId) {
+                task.copy(
+                    title = edit.title,
+                    schedule = edit.schedule,
+                    colorIndex = edit.colorIndex,
+                    notes = edit.notes,
+                )
+            } else {
+                task
+            }
+        }
+    }
+
     private val boardRepository = mockk<BoardRepository>(relaxed = true) {
         every { observeBoard(BOARD) } returns board
     }
     private val taskRepository = mockk<TaskRepository>(relaxed = true) {
         every { observeTasks(BOARD) } returns tasks
+        coEvery { saveTask(any(), any()) } coAnswers { applySavedEdit(arg(0)) }
     }
     private val settingsRepository = mockk<SettingsRepository>(relaxed = true) {
         every { observeSettings() } returns settings
@@ -230,7 +253,10 @@ class BoardViewModelTest {
     @Test
     fun nothingChangesTheDraftWhileSaving() {
         val saving = CompletableDeferred<Unit>()
-        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { saving.await() }
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers {
+            saving.await()
+            applySavedEdit(arg(0))
+        }
         val viewModel = viewModel()
         viewModel.editBWithLaterTime()
         viewModel.onEmptyTap()
@@ -368,7 +394,10 @@ class BoardViewModelTest {
     @Test
     fun settingsWhileSavingWaitsAndUnchangedEditingJustEnds() = runTest {
         val saving = CompletableDeferred<Unit>()
-        coEvery { taskRepository.saveTask(any(), any()) } coAnswers { saving.await() }
+        coEvery { taskRepository.saveTask(any(), any()) } coAnswers {
+            saving.await()
+            applySavedEdit(arg(0))
+        }
         val viewModel = viewModel()
         val opened = mutableListOf<BoardAction>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.actions.toList(opened) }
@@ -455,7 +484,14 @@ class BoardViewModelTest {
     fun newTaskOnASortedBoardGoesAtTheEndOfTheManualOrderAndIsRevealed() = runTest {
         sortBy(TaskSortMode.START_TIME)
         coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } coAnswers {
-            tasks.value += task(D, 3).copy(title = "Early", schedule = early)
+            tasks.value += task(
+                id = D,
+                order = 3,
+                title = arg(1),
+                schedule = arg(2),
+                colorIndex = arg(3),
+                notes = arg(4),
+            )
             D
         }
         val viewModel = viewModel()
@@ -688,9 +724,15 @@ class BoardViewModelTest {
 
     @Test
     fun savingANewTaskCreatesItAfterTheLastRow() {
-        val created = task(D, 3)
         coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } coAnswers {
-            tasks.value += created
+            tasks.value += task(
+                id = D,
+                order = 3,
+                title = arg(1),
+                schedule = arg(2),
+                colorIndex = arg(3),
+                notes = arg(4),
+            )
             D
         }
         val viewModel = viewModel()
@@ -709,9 +751,17 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.onNewTask(later)
         viewModel.onTitleChange("Design review")
+        val draft = viewModel.ready.edit!!.draft
         viewModel.onConfirm(TAIPEI)
         assertTrue(viewModel.ready.editStatus.isSaving)
-        tasks.value += task(D, 3)
+        tasks.value += task(
+            id = D,
+            order = 3,
+            title = draft.title,
+            schedule = draft.schedule,
+            colorIndex = draft.colorIndex,
+            notes = draft.notes,
+        )
         assertNull(viewModel.ready.edit)
     }
 
@@ -726,7 +776,16 @@ class BoardViewModelTest {
     @Test
     fun newTaskMovedToTheTopIsCreatedThereOnSave() {
         coEvery { taskRepository.createTask(any(), any(), any(), any(), any(), any()) } coAnswers {
-            tasks.value = listOf(task(D, 0)) + tasks.value
+            tasks.value = listOf(
+                task(
+                    id = D,
+                    order = 0,
+                    title = arg(1),
+                    schedule = arg(2),
+                    colorIndex = arg(3),
+                    notes = arg(4),
+                ),
+            ) + tasks.value
             D
         }
         val viewModel = viewModel()
@@ -747,10 +806,20 @@ class BoardViewModelTest {
         val viewModel = viewModel()
         viewModel.onNewTask(later)
         viewModel.onTitleChange("First")
+        val draft = viewModel.ready.edit!!.draft
         viewModel.onConfirm(TAIPEI)
         assertFalse(viewModel.ready.editStatus.saveFailed)
         assertTrue(viewModel.ready.editStatus.isSaving)
-        tasks.value = listOf(task(9, 0))
+        tasks.value = listOf(
+            task(
+                id = 9,
+                order = 0,
+                title = draft.title,
+                schedule = draft.schedule,
+                colorIndex = draft.colorIndex,
+                notes = draft.notes,
+            ),
+        )
         assertNull(viewModel.ready.edit)
         assertEquals(EditStatus(), viewModel.ready.editStatus)
         coVerify(exactly = 1) { taskRepository.createTask(BOARD, "First", later, any(), "", 0) }

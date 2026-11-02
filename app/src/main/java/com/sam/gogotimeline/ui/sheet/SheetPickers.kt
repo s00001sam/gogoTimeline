@@ -24,6 +24,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,6 +33,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -54,7 +56,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.sam.gogotimeline.R
 import com.sam.gogotimeline.core.LayoutConst
 import com.sam.gogotimeline.core.TimeConst
+import com.sam.gogotimeline.core.time.CalendarContext
 import com.sam.gogotimeline.core.time.SheetTimeEdit
+import com.sam.gogotimeline.core.time.TimeLimits
 import com.sam.gogotimeline.ui.preview.PreviewSurface
 import com.sam.gogotimeline.ui.preview.ThemePreviews
 import java.time.Instant
@@ -70,13 +74,25 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun SheetDatePickerDialog(
     initial: LocalDate,
+    boundary: Boundary,
+    time: LocalTime?,
+    calendar: CalendarContext,
     onPick: (LocalDate) -> Unit,
     onDismiss: () -> Unit,
 ) {
     // The picker works in UTC midnights, so dates convert through UTC to stay the same day in every zone.
+    val selectableDates = remember(boundary, time, calendar) {
+        object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate()
+                return isDateWithinTimeline(date, boundary, time, calendar)
+            }
+        }
+    }
     val state = rememberDatePickerState(
         initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
         yearRange = TimeConst.MIN_YEAR..TimeConst.MAX_YEAR,
+        selectableDates = selectableDates,
     )
     val colors = DatePickerDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
     DatePickerDialog(
@@ -98,6 +114,23 @@ internal fun SheetDatePickerDialog(
         colors = colors,
     ) {
         DatePicker(state = state, colors = colors)
+    }
+}
+
+internal fun isDateWithinTimeline(
+    date: LocalDate,
+    boundary: Boundary,
+    time: LocalTime?,
+    calendar: CalendarContext,
+): Boolean {
+    val value = when {
+        time != null -> date.atTime(time).atZone(calendar.zone).toInstant().toEpochMilli()
+        boundary == Boundary.START -> calendar.startOfDay(date)
+        else -> calendar.startOfDay(date.plusDays(1))
+    }
+    return when (boundary) {
+        Boundary.START -> value in TimeLimits.MIN until TimeLimits.MAX
+        Boundary.END -> value > TimeLimits.MIN && value <= TimeLimits.MAX
     }
 }
 

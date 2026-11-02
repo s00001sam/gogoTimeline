@@ -15,7 +15,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -44,14 +47,25 @@ internal fun TaskBar(
     style: TextStyle,
     barLeftPx: () -> Float,
     axisWidthPx: () -> Float,
+    onClick: (() -> Unit)? = null,
 ) {
     val extendedColors = GogoTimelineTheme.extendedColors
     val textColor = MaterialTheme.colorScheme.onSurface
     val description = "${task.title}, $text"
+    val clickAction = onClick
     Box(
         modifier = modifier
             .testTag("taskBar-${task.id}")
-            .semantics { contentDescription = description }
+            .semantics {
+                contentDescription = description
+                if (clickAction != null) {
+                    role = Role.Button
+                    onClick {
+                        clickAction()
+                        true
+                    }
+                }
+            }
             .drawBehind {
                 val corner = CornerRadius(LayoutConst.BAR_CORNER_RADIUS_DP.dp.toPx())
                 drawRoundRect(extendedColors.taskColor(task.colorIndex), cornerRadius = corner)

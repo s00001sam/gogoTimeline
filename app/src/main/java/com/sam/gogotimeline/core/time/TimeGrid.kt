@@ -50,7 +50,7 @@ class TimeGrid(
     fun isOnGrid(time: Long): Boolean = floor(time) == time
 
     // Steps in elapsed time and re-floors, so 23- and 25-hour DST days still land on the next line.
-    private fun next(gridTime: Long): Long {
+    internal fun next(gridTime: Long): Long {
         var candidate = gridTime + interval.millis
         while (true) {
             val floor = floor(candidate)

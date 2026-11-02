@@ -10,6 +10,8 @@ class BoardLocalDataSourceImpl @Inject constructor(private val boardDao: BoardDa
 
     override fun observeBoard(id: Long): Flow<BoardEntity?> = boardDao.observeBoard(id)
 
+    override suspend fun getBoard(id: Long): BoardEntity? = boardDao.getBoard(id)
+
     override suspend fun getMostRecentBoardId(): Long? = boardDao.getMostRecentBoardId()
 
     override suspend fun updateAnchor(

@@ -13,6 +13,9 @@ interface BoardDao {
     @Query("SELECT * FROM boards WHERE id = :id")
     fun observeBoard(id: Long): Flow<BoardEntity?>
 
+    @Query("SELECT * FROM boards WHERE id = :id")
+    suspend fun getBoard(id: Long): BoardEntity?
+
     @Query("SELECT id FROM boards ORDER BY lastOpenedAt DESC LIMIT 1")
     suspend fun getMostRecentBoardId(): Long?
 

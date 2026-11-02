@@ -598,6 +598,7 @@ fun BoardContent(
                 state = it,
                 expanded = true,
                 focusName = sheet?.isNew == true,
+                calendar = calendar,
                 onTitleChange = onTitleChange,
                 onNotesChange = onNotesChange,
                 onDatePick = onDatePick,
@@ -655,6 +656,7 @@ fun BoardContent(
                             expanded = sheetState.targetValue == SheetValue.Expanded ||
                                 sheetState.currentValue == SheetValue.Expanded,
                             focusName = sheet?.isNew == true,
+                            calendar = calendar,
                             onTitleChange = onTitleChange,
                             onNotesChange = onNotesChange,
                             onDatePick = onDatePick,

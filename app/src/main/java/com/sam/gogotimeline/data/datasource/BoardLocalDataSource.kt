@@ -8,6 +8,8 @@ interface BoardLocalDataSource {
 
     fun observeBoard(id: Long): Flow<BoardEntity?>
 
+    suspend fun getBoard(id: Long): BoardEntity?
+
     suspend fun getMostRecentBoardId(): Long?
 
     suspend fun updateAnchor(

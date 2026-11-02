@@ -11,6 +11,7 @@ import com.sam.gogotimeline.data.local.toDomain
 import com.sam.gogotimeline.data.local.withSchedule
 import com.sam.gogotimeline.data.model.Task
 import com.sam.gogotimeline.data.model.TaskEdit
+import com.sam.gogotimeline.data.model.TaskValidator
 import java.time.Clock
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
@@ -35,6 +36,8 @@ class TaskRepositoryImpl @Inject constructor(
     ): Long = transaction.run {
         require(TaskTitle.isValid(title)) { "Invalid task name" }
         require(TaskNotes.isValid(notes)) { "Notes too long" }
+        TaskValidator.requireValid(schedule, colorIndex)
+        requireEditableBoard(boardId)
         val now = clock.millis()
         // Rows from the new one's place down move one row first, so no two rows ever share a sortOrder.
         val count = (taskDataSource.maxSortOrder(boardId) ?: -1) + 1
@@ -63,7 +66,9 @@ class TaskRepositoryImpl @Inject constructor(
             // The sheet checks the name too; checking here keeps bad names out whoever saves.
             require(TaskTitle.isValid(edit.title)) { "Invalid task name" }
             require(TaskNotes.isValid(edit.notes)) { "Notes too long" }
+            TaskValidator.requireValid(edit.schedule, edit.colorIndex)
             val current = checkNotNull(taskDataSource.getTask(edit.taskId)) { "Task ${edit.taskId} no longer exists" }
+            requireEditableBoard(current.boardId)
             val edited = current.copy(
                 title = edit.title.trim(),
                 notes = TaskNotes.normalize(edit.notes),
@@ -80,8 +85,10 @@ class TaskRepositoryImpl @Inject constructor(
         toIndex: Int,
     ) {
         transaction.run {
-            val from = taskDataSource.getTask(taskId)?.sortOrder ?: return@run
-            moveInTransaction(boardId, taskId, from, toIndex)
+            val task = taskDataSource.getTask(taskId) ?: return@run
+            check(task.boardId == boardId) { "Task $taskId does not belong to board $boardId" }
+            requireEditableBoard(boardId)
+            moveInTransaction(boardId, taskId, task.sortOrder, toIndex)
         }
     }
 
@@ -106,10 +113,17 @@ class TaskRepositoryImpl @Inject constructor(
         taskId: Long,
     ) {
         transaction.run {
-            val order = taskDataSource.getTask(taskId)?.sortOrder ?: return@run
+            val task = taskDataSource.getTask(taskId) ?: return@run
+            check(task.boardId == boardId) { "Task $taskId does not belong to board $boardId" }
+            requireEditableBoard(boardId)
             taskDataSource.delete(taskId)
-            taskDataSource.shiftSortOrders(boardId, order + 1, Int.MAX_VALUE, -1)
+            taskDataSource.shiftSortOrders(boardId, task.sortOrder + 1, Int.MAX_VALUE, -1)
             boardDataSource.clearAnchor(taskId)
         }
+    }
+
+    private suspend fun requireEditableBoard(boardId: Long) {
+        val board = checkNotNull(boardDataSource.getBoard(boardId)) { "Board $boardId no longer exists" }
+        check(!board.locked) { "Board $boardId is locked" }
     }
 }

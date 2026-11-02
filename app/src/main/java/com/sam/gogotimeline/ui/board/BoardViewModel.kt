@@ -234,12 +234,9 @@ class BoardViewModel @Inject constructor(
                 )
                 val sorted = ready?.settings?.taskSortMode != TaskSortMode.MANUAL
                 val id = if (toSave.isNew) createTask(toSave, session.draftRow) else saveTask(toSave, session)
-                // Editing ends only once the saved task is back in the list where it belongs, so its row never jumps
-                // back for a frame. A sorted board moves it to where its times belong, and the screen follows it.
-                when {
-                    sorted -> awaitTask(id) { it.schedule == toSave.schedule }
-                    toSave.isNew || session.draftRow != session.originalRow -> awaitRow(id, session.draftRow)
-                }
+                // Keep the draft over the database row until every saved field has come back from Room. Otherwise a
+                // content-only edit can briefly show the old title/color/notes after the draft is removed.
+                awaitSavedTask(id, toSave, expectedRow = session.draftRow.takeUnless { sorted })
                 endEditing()
                 if (sorted) revealRequests.trySend(id)
             } catch (cancelled: CancellationException) {
@@ -375,21 +372,22 @@ class BoardViewModel @Inject constructor(
         return edit.taskId
     }
 
-    // Waits until the shown list has [taskId] at [row].
-    private suspend fun awaitRow(
+    /** Waits for Room to return the full saved content and, in manual order, the saved row. */
+    private suspend fun awaitSavedTask(
         taskId: Long,
-        row: Int,
+        saved: TaskEdit,
+        expectedRow: Int?,
     ) = awaitTasks { tasks ->
         val index = tasks.indexOfFirst { it.id == taskId }
-        // Not there yet: keep waiting. On an empty board the list may still be empty, with no row to clamp to.
-        index >= 0 && index == row.coerceIn(0, tasks.lastIndex)
+        if (index < 0) return@awaitTasks false
+        val task = tasks[index]
+        val contentMatches = task.title == saved.title &&
+            task.notes == saved.notes &&
+            task.colorIndex == saved.colorIndex &&
+            task.schedule == saved.schedule
+        val rowMatches = expectedRow == null || index == expectedRow.coerceIn(0, tasks.lastIndex)
+        contentMatches && rowMatches
     }
-
-    // Waits until the shown list has task [taskId] matching [saved].
-    private suspend fun awaitTask(
-        taskId: Long,
-        saved: (Task) -> Boolean,
-    ) = awaitTasks { tasks -> tasks.any { it.id == taskId && saved(it) } }
 
     private suspend fun awaitTasks(matches: (List<Task>) -> Boolean) {
         uiState.first { state -> (state as? BoardUiState.Ready)?.tasks?.let(matches) == true }

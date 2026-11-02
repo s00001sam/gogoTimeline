@@ -1,6 +1,7 @@
 package com.sam.gogotimeline.core.time
 
 import java.time.DayOfWeek
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -101,6 +102,24 @@ class TicksTest {
         assertEquals(listOf("22", "23", "01", "02"), ticks.bottom.labels())
         assertEquals("Sun, Sep 6", ticks.top.last().label)
         assertEquals("2026-09-06T01:00", SANTIAGO.local(ticks.top.last().time))
+    }
+
+    @Test
+    fun hourTicksUseTheCurrentOffsetWhenAZoneChangedItsBaseOffset() {
+        val kathmandu = CalendarContext(ZoneId.of("Asia/Kathmandu"), DayOfWeek.MONDAY)
+        val ticks = ticks("2026-10-30T13:20", "2026-10-30T15:20", TimeUnit.HOUR, 64f, kathmandu)
+        assertEquals(
+            listOf("2026-10-30T13:00", "2026-10-30T14:00", "2026-10-30T15:00"),
+            ticks.bottom.map { kathmandu.local(it.time) },
+        )
+    }
+
+    @Test
+    fun halfHourDstTransitionUsesValidLocalGridLines() {
+        val lordHowe = CalendarContext(ZoneId.of("Australia/Lord_Howe"), DayOfWeek.MONDAY)
+        val ticks = ticks("2026-10-04T01:00", "2026-10-04T04:00", TimeUnit.HOUR, 64f, lordHowe)
+        assertEquals(listOf("01", "02", "03", "04"), ticks.bottom.labels())
+        assertEquals("2026-10-04T02:30", lordHowe.local(ticks.bottom[1].time))
     }
 
     @Test

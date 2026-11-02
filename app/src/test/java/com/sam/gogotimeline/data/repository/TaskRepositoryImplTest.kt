@@ -6,6 +6,7 @@ import com.sam.gogotimeline.core.time.TimeRange
 import com.sam.gogotimeline.core.time.at
 import com.sam.gogotimeline.data.datasource.BoardLocalDataSource
 import com.sam.gogotimeline.data.datasource.TaskLocalDataSource
+import com.sam.gogotimeline.data.local.BoardEntity
 import com.sam.gogotimeline.data.local.TaskEntity
 import com.sam.gogotimeline.data.model.TaskEdit
 import io.mockk.coEvery
@@ -36,6 +37,13 @@ class TaskRepositoryImplTest {
     )
 
     private val kickoff = TimeRange(TAIPEI.at("2026-10-31T09:00"), TAIPEI.at("2026-10-31T10:30"))
+
+    init {
+        coEvery { boards.getBoard(BOARD) } returns board()
+    }
+
+    private fun board(locked: Boolean = false) =
+        BoardEntity(BOARD, "Work", anchorTaskId = null, lastOpenedAt = now, locked = locked)
 
     private fun entity(order: Int) = TaskEntity(
         id = TASK,
@@ -288,6 +296,36 @@ class TaskRepositoryImplTest {
         val result = runCatching { repository.saveTask(edit(kickoff).copy(title = "Renamed"), toIndex = 3) }
         assertTrue(result.isFailure)
         coVerify(exactly = 0) { tasks.setSortOrder(any(), any()) }
+    }
+
+    @Test
+    fun taskFromAnotherBoardCannotBeMovedOrDeleted() = runTest {
+        coEvery { tasks.getTask(TASK) } returns entity(2).copy(boardId = BOARD + 1)
+
+        assertTrue(runCatching { repository.moveTask(BOARD, TASK, 0) }.exceptionOrNull() is IllegalStateException)
+        assertTrue(runCatching { repository.deleteTask(BOARD, TASK) }.exceptionOrNull() is IllegalStateException)
+
+        coVerify(exactly = 0) { tasks.setSortOrder(any(), any()) }
+        coVerify(exactly = 0) { tasks.delete(any()) }
+    }
+
+    @Test
+    fun lockedBoardRejectsEveryTaskWrite() = runTest {
+        coEvery { boards.getBoard(BOARD) } returns board(locked = true)
+        givenTask(order = 0)
+
+        val results = listOf(
+            runCatching { repository.createTask(BOARD, "New", TaskSchedule.Timed(kickoff), 0, "") },
+            runCatching { repository.saveTask(edit(kickoff).copy(title = "Changed")) },
+            runCatching { repository.moveTask(BOARD, TASK, 1) },
+            runCatching { repository.deleteTask(BOARD, TASK) },
+        )
+
+        assertTrue(results.all { it.exceptionOrNull() is IllegalStateException })
+        coVerify(exactly = 0) { tasks.insert(any()) }
+        coVerify(exactly = 0) { tasks.update(any()) }
+        coVerify(exactly = 0) { tasks.setSortOrder(any(), any()) }
+        coVerify(exactly = 0) { tasks.delete(any()) }
     }
 
     private companion object {

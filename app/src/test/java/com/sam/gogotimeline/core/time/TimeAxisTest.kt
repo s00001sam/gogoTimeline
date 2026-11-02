@@ -74,10 +74,10 @@ class TimeAxisTest {
     }
 
     @Test
-    fun hourLinesStayOnLocalHourInHalfHourZone() {
-        val axis = KOLKATA.axis(TimeUnit.HOUR)
-        val start = axis.startOf(axis.indexOf(KOLKATA.at("2026-10-30T14:20")))
-        assertEquals("2026-10-30T14:00", KOLKATA.local(start))
+    fun hourAxisAlwaysUsesElapsedTime() {
+        val first = KOLKATA.position(TimeUnit.HOUR, "2026-10-30T14:00")
+        val second = KOLKATA.position(TimeUnit.HOUR, "2026-10-30T15:00")
+        assertEquals(1.0, second - first, EPSILON)
     }
 
     @Test

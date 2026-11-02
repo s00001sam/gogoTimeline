@@ -1,6 +1,5 @@
 package com.sam.gogotimeline.core.time
 
-import java.time.Instant
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import kotlin.math.floor
@@ -17,18 +16,16 @@ class TimeAxis(
         .with(TemporalAdjusters.previousOrSame(calendar.firstDayOfWeek))
         .toEpochDay()
 
-    // Hours use elapsed time; the shift keeps hour lines on local :00 in half-hour-offset zones.
-    private val hourShiftMs = calendar.zone.rules.getStandardOffset(Instant.EPOCH).totalSeconds % 3_600 * 1_000L
-
     fun indexOf(time: Long): Long = when (unit) {
-        TimeUnit.HOUR -> Math.floorDiv(time + hourShiftMs, HOUR_MS)
+        // Local hour lines use date-specific zone rules in Ticks.
+        TimeUnit.HOUR -> Math.floorDiv(time, HOUR_MS)
         TimeUnit.DAY -> calendar.localDate(time).toEpochDay()
         TimeUnit.WEEK -> Math.floorDiv(calendar.localDate(time).toEpochDay() - weekOriginEpochDay, 7L)
         TimeUnit.MONTH -> calendar.localDate(time).let { it.year * 12L + it.monthValue - 1 }
     }
 
     fun startOf(index: Long): Long = when (unit) {
-        TimeUnit.HOUR -> index * HOUR_MS - hourShiftMs
+        TimeUnit.HOUR -> index * HOUR_MS
 
         TimeUnit.DAY -> calendar.startOfDay(LocalDate.ofEpochDay(index))
 
