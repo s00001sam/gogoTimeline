@@ -397,7 +397,7 @@ fun BoardContent(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val tablet = isTabletLayout()
-    // The bottom sheet needs height; wide windows edit in a floating card and short narrow ones on a full page (7.1).
+    // The bottom sheet needs height; large windows edit in a floating card and short ones on a full page (7.1).
     val editorLayout = editorLayout()
     val useSheet = editorLayout == EditorLayout.BOTTOM_SHEET
     // The sheet stays hidden until a task is edited or viewed; it keeps the last content while it slides away.
@@ -871,8 +871,7 @@ private fun FloatingEditorCard(
     val fade = tween<Float>(LayoutConst.EDITOR_PANEL_ANIMATION_MILLIS)
     AnimatedVisibility(
         visible = visible,
-        // Clear of a side navigation bar or cutout on landscape phones, of the bottom navigation bar, and of the
-        // keyboard, which lifts the card while typing.
+        // Clear of the navigation bars, display cutout and keyboard, which lifts the card while typing.
         modifier = modifier
             .windowInsetsPadding(
                 WindowInsets.navigationBars.union(WindowInsets.displayCutout).union(WindowInsets.ime)
@@ -897,7 +896,7 @@ private fun FloatingEditorCard(
     }
 }
 
-/** The editor on short, narrow windows: the whole screen from the start, no collapsed state (spec 7.1). */
+/** The editor on short windows: the whole screen from the start, no collapsed state (spec 7.1). */
 @Composable
 private fun FullPageEditor(
     visible: Boolean,

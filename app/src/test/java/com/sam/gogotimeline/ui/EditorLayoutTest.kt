@@ -11,8 +11,8 @@ class EditorLayoutTest {
     }
 
     @Test
-    fun landscapePhoneIsTooShortForTheSheetButWideEnoughForTheCard() {
-        assertEquals(EditorLayout.FLOATING_CARD, EditorLayout.of(wide = true, tall = false))
+    fun landscapePhoneUsesTheFullPageEditor() {
+        assertEquals(EditorLayout.FULL_PAGE, EditorLayout.of(wide = true, tall = false))
     }
 
     @Test

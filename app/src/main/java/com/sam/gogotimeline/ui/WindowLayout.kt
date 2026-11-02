@@ -15,7 +15,7 @@ fun isTabletLayout(): Boolean {
         sizeClass.isHeightAtLeastBreakpoint(LayoutConst.TABLET_MIN_HEIGHT_DP.toInt())
 }
 
-/** Where the task editor goes (spec 7.1): the bottom sheet needs height, the floating card needs width. */
+/** Where the task editor goes (spec 7.1): the bottom sheet needs height, the floating card needs width and height. */
 enum class EditorLayout {
     BOTTOM_SHEET,
     FLOATING_CARD,
@@ -28,7 +28,7 @@ enum class EditorLayout {
             wide: Boolean,
             tall: Boolean,
         ): EditorLayout = when {
-            wide -> FLOATING_CARD
+            wide && tall -> FLOATING_CARD
             tall -> BOTTOM_SHEET
             else -> FULL_PAGE
         }
